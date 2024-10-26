@@ -13,9 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+module org.glavo.kaca {
+    requires static org.tukaani.xz;
 
-rootProject.name = "kaca-base"
-
-include(
-    "kaca"
-)
+    exports org.glavo.kaca;
+    exports org.glavo.kaca.repository;
+}

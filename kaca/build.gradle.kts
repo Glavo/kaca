@@ -15,7 +15,6 @@
  */
 
 plugins {
-    id("java-library")
     id("org.glavo.compile-module-info-plugin") version "2.0"
 }
 
@@ -25,6 +24,6 @@ tasks.compileJava {
 }
 
 dependencies {
-    // https://mvnrepository.com/artifact/com.google.code.gson/gson
-    implementation("com.google.code.gson:gson:2.11.0")
+    // https://mvnrepository.com/artifact/org.tukaani/xz
+    implementation("org.tukaani:xz:1.10")
 }

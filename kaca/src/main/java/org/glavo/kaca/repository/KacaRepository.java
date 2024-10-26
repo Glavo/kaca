@@ -13,9 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.glavo.kaca.repository;
 
-rootProject.name = "kaca-base"
+import java.io.Closeable;
 
-include(
-    "kaca"
-)
+public interface KacaRepository extends Closeable {
+    boolean isReadOnly();
+}

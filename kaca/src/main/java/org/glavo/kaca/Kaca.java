@@ -13,9 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.glavo.kaca;
 
-rootProject.name = "kaca-base"
+public final class Kaca {
 
-include(
-    "kaca"
-)
+
+
+    public static void main(String[] args) {
+
+    }
+}
