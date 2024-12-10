@@ -16,5 +16,5 @@
 package org.glavo.kaca.object;
 
 public interface KacaObject {
-
+    KacaObjectType getType();
 }

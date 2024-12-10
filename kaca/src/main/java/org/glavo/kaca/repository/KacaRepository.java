@@ -19,4 +19,6 @@ import java.io.Closeable;
 
 public interface KacaRepository extends Closeable {
     boolean isReadOnly();
+
+
 }

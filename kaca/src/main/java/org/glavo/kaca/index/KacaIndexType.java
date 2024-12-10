@@ -13,10 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.glavo.kaca.snapshot;
+package org.glavo.kaca.index;
 
-import java.time.ZonedDateTime;
-
-public interface KacaSnapshot {
-    ZonedDateTime getTime();
+public enum KacaIndexType {
+    SHA256,
+    SHA512;
 }

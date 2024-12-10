@@ -13,10 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.glavo.kaca.snapshot;
+package org.glavo.kaca.repository;
 
-import java.time.ZonedDateTime;
+public class ReadOnlyKacaRepositoryException extends UnsupportedOperationException {
 
-public interface KacaSnapshot {
-    ZonedDateTime getTime();
 }

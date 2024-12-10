@@ -13,12 +13,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.glavo.kaca.impl.object;
+package org.glavo.kaca.object;
 
-public final class KacaObjectIndexes {
+import java.nio.charset.StandardCharsets;
 
+public enum KacaObjectType {
+    FILE("FILE"),
+    SNAPSHOT("SNAP"),
+    ;
 
+    private final byte[] header;
 
-    private KacaObjectIndexes() {
+    KacaObjectType(String header) {
+        if (header.length() != 4) {
+            throw new AssertionError("Invalid header: " + header);
+        }
+        this.header = header.getBytes(StandardCharsets.US_ASCII);
     }
 }
