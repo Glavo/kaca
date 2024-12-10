@@ -31,9 +31,9 @@ subprojects {
     }
 
     dependencies {
-        compileOnlyApi("org.jetbrains:annotations:25.0.0")
-        testImplementation(platform("org.junit:junit-bom:5.11.3"))
-        testImplementation("org.junit.jupiter:junit-jupiter")
+        compileOnlyApi(rootProject.libs.jetbrains.annotations)
+        testImplementation(platform(rootProject.libs.junit.bom))
+        testImplementation(rootProject.libs.junit.jupiter)
     }
 
     tasks.test {

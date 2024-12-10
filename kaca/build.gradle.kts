@@ -25,5 +25,5 @@ tasks.compileJava {
 
 dependencies {
     // https://mvnrepository.com/artifact/org.tukaani/xz
-    implementation("org.tukaani:xz:1.10")
+    implementation(libs.xz)
 }
