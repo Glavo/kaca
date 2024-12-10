@@ -13,11 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-module org.glavo.kaca {
-    requires static org.tukaani.xz;
+package org.glavo.kaca.impl.object;
 
-    exports org.glavo.kaca.index;
-    exports org.glavo.kaca.object;
-    exports org.glavo.kaca.repository;
-    exports org.glavo.kaca.snapshot;
+public final class KacaObjectIndexes {
+
+
+
+    private KacaObjectIndexes() {
+    }
 }
