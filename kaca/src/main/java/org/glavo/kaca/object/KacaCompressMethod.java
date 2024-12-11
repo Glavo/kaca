@@ -13,21 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.glavo.kaca.repository;
+package org.glavo.kaca.object;
 
-public class ReadOnlyKacaRepositoryException extends UnsupportedOperationException {
-    public ReadOnlyKacaRepositoryException() {
-    }
-
-    public ReadOnlyKacaRepositoryException(String message) {
-        super(message);
-    }
-
-    public ReadOnlyKacaRepositoryException(String message, Throwable cause) {
-        super(message, cause);
-    }
-
-    public ReadOnlyKacaRepositoryException(Throwable cause) {
-        super(cause);
-    }
+public enum KacaCompressMethod {
+    NONE,   // 0x00
+    GZIP,   // 0x01
+    LZMA2   // 0x02
 }

@@ -17,5 +17,5 @@ package org.glavo.kaca.index;
 
 public enum KacaIndexType {
     SHA256,
-    SHA512;
+    SHA512
 }

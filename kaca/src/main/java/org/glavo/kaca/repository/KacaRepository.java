@@ -15,10 +15,42 @@
  */
 package org.glavo.kaca.repository;
 
+import org.glavo.kaca.index.KacaIndex;
+import org.glavo.kaca.index.KacaIndexType;
+import org.glavo.kaca.object.KacaObjectOptions;
+import org.glavo.kaca.object.KacaObjectType;
+
+import java.io.ByteArrayInputStream;
 import java.io.Closeable;
+import java.io.InputStream;
 
-public interface KacaRepository extends Closeable {
-    boolean isReadOnly();
+public abstract class KacaRepository implements Closeable {
 
+    private final boolean isReadOnly;
 
+    protected KacaRepository(boolean isReadOnly) {
+        this.isReadOnly = isReadOnly;
+    }
+
+    public boolean isReadOnly() {
+        return isReadOnly;
+    }
+
+    protected void checkWritable() throws ReadOnlyKacaRepositoryException {
+        if (isReadOnly()) {
+            throw new ReadOnlyKacaRepositoryException("This repository is readonly");
+        }
+    }
+
+    public abstract KacaIndexType getIndexType();
+
+    //region KacaObjects
+
+    public abstract KacaIndex putObject(KacaObjectType type, KacaObjectOptions options, InputStream data);
+
+    public KacaIndex putObject(KacaObjectType type, KacaObjectOptions options, byte[] data) {
+        return putObject(type, options, new ByteArrayInputStream(data));
+    }
+
+    //endregion
 }

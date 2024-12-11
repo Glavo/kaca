@@ -15,19 +15,27 @@
  */
 package org.glavo.kaca.repository;
 
-public class ReadOnlyKacaRepositoryException extends UnsupportedOperationException {
-    public ReadOnlyKacaRepositoryException() {
+import java.io.IOException;
+import java.nio.channels.FileChannel;
+import java.nio.file.Path;
+
+public abstract class LocalKacaRepository extends KacaRepository { // TODO
+
+    private final Path repositoryPath;
+    private final FileChannel lockFileChannel;
+
+    private LocalKacaRepository(boolean isReadOnly, Path repositoryPath, FileChannel lockFileChannel) {
+        super(isReadOnly);
+        this.repositoryPath = repositoryPath;
+        this.lockFileChannel = lockFileChannel;
     }
 
-    public ReadOnlyKacaRepositoryException(String message) {
-        super(message);
+    public Path getRepositoryPath() {
+        return repositoryPath;
     }
 
-    public ReadOnlyKacaRepositoryException(String message, Throwable cause) {
-        super(message, cause);
-    }
-
-    public ReadOnlyKacaRepositoryException(Throwable cause) {
-        super(cause);
+    @Override
+    public void close() throws IOException {
+        lockFileChannel.close();
     }
 }

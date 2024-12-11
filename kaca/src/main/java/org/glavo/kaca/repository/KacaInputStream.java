@@ -13,8 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.glavo.kaca.object;
+package org.glavo.kaca.repository;
 
-public interface KacaObject {
-    KacaObjectType getType();
+import java.io.FilterInputStream;
+import java.io.InputStream;
+
+public class KacaInputStream extends FilterInputStream {
+    protected KacaInputStream(InputStream in) {
+        super(in);
+    }
 }
