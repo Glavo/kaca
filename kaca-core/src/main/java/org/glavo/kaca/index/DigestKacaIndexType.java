@@ -50,14 +50,17 @@ public final class DigestKacaIndexType extends KacaIndexType {
         }
 
         return new KacaIndexBuilder() {
+            private long count = 0L;
+
             @Override
             public void update(byte[] data, int offset, int length) {
+                count += length;
                 digest.update(data, offset, length);
             }
 
             @Override
             public KacaIndex build() {
-                return new DigestKacaIndex(DigestKacaIndexType.this, digest.digest());
+                return new DigestKacaIndex(DigestKacaIndexType.this, count, digest.digest());
             }
         };
     }

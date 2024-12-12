@@ -19,9 +19,12 @@ import org.jetbrains.annotations.ApiStatus;
 
 public final class DigestKacaIndex extends KacaIndex {
     private final DigestKacaIndexType type;
+
+    private final long length;
     private final byte[] digest;
 
-    DigestKacaIndex(DigestKacaIndexType type, byte[] digest) {
+    DigestKacaIndex(DigestKacaIndexType type, long length, byte[] digest) {
+        this.length = length;
         assert digest.length == type.getDigestLength();
 
         this.type = type;
@@ -31,6 +34,10 @@ public final class DigestKacaIndex extends KacaIndex {
     @Override
     public DigestKacaIndexType getType() {
         return type;
+    }
+
+    public long getLength() {
+        return length;
     }
 
     public byte[] getDigest() {
