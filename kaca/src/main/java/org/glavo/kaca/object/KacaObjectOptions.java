@@ -17,18 +17,12 @@ package org.glavo.kaca.object;
 
 public final class KacaObjectOptions {
 
-    private final KacaObjectType type;
     private final KacaCompressMethod compressMethod;
     private final int compressLevel;
 
-    private KacaObjectOptions(KacaObjectType type, KacaCompressMethod compressMethod, int compressLevel) {
-        this.type = type;
+    private KacaObjectOptions(KacaCompressMethod compressMethod, int compressLevel) {
         this.compressMethod = compressMethod;
         this.compressLevel = compressLevel;
-    }
-
-    public KacaObjectType getType() {
-        return type;
     }
 
     public KacaCompressMethod getCompressMethod() {

@@ -27,13 +27,11 @@ import java.io.InputStream;
 public abstract class KacaRepository implements Closeable {
 
     private final boolean isReadOnly;
+    private final KacaIndexType indexType;
 
-    protected KacaRepository(boolean isReadOnly) {
+    protected KacaRepository(boolean isReadOnly, KacaIndexType indexType) {
         this.isReadOnly = isReadOnly;
-    }
-
-    public boolean isReadOnly() {
-        return isReadOnly;
+        this.indexType = indexType;
     }
 
     protected void checkWritable() throws ReadOnlyKacaRepositoryException {
@@ -42,7 +40,13 @@ public abstract class KacaRepository implements Closeable {
         }
     }
 
-    public abstract KacaIndexType getIndexType();
+    public boolean isReadOnly() {
+        return isReadOnly;
+    }
+
+    public KacaIndexType getIndexType() {
+        return indexType;
+    }
 
     //region KacaObjects
 

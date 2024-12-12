@@ -15,23 +15,35 @@
  */
 package org.glavo.kaca.repository;
 
+import org.glavo.kaca.index.KacaIndex;
+import org.glavo.kaca.index.KacaIndexType;
+import org.glavo.kaca.object.KacaObjectOptions;
+import org.glavo.kaca.object.KacaObjectType;
+
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 
-public abstract class LocalKacaRepository extends KacaRepository { // TODO
+public final class LocalKacaRepository extends KacaRepository {
 
     private final Path repositoryPath;
     private final FileChannel lockFileChannel;
 
-    private LocalKacaRepository(boolean isReadOnly, Path repositoryPath, FileChannel lockFileChannel) {
-        super(isReadOnly);
+    private LocalKacaRepository(boolean isReadOnly, KacaIndexType indexType,
+                                Path repositoryPath, FileChannel lockFileChannel) {
+        super(isReadOnly, indexType);
         this.repositoryPath = repositoryPath;
         this.lockFileChannel = lockFileChannel;
     }
 
     public Path getRepositoryPath() {
         return repositoryPath;
+    }
+
+    @Override
+    public KacaIndex putObject(KacaObjectType type, KacaObjectOptions options, InputStream data) {
+        throw new UnsupportedOperationException(); // TODO
     }
 
     @Override
