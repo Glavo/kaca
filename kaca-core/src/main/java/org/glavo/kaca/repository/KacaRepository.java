@@ -22,6 +22,7 @@ import org.glavo.kaca.object.KacaObjectType;
 
 import java.io.ByteArrayInputStream;
 import java.io.Closeable;
+import java.io.IOException;
 import java.io.InputStream;
 
 public abstract class KacaRepository implements Closeable {
@@ -50,9 +51,9 @@ public abstract class KacaRepository implements Closeable {
 
     //region KacaObjects
 
-    public abstract KacaIndex putObject(KacaObjectType type, KacaObjectOptions options, InputStream data);
+    public abstract KacaIndex putObject(KacaObjectType type, KacaObjectOptions options, InputStream data) throws IOException;
 
-    public KacaIndex putObject(KacaObjectType type, KacaObjectOptions options, byte[] data) {
+    public KacaIndex putObject(KacaObjectType type, KacaObjectOptions options, byte[] data) throws IOException {
         return putObject(type, options, new ByteArrayInputStream(data));
     }
 

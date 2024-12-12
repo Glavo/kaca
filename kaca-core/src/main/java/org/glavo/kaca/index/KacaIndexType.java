@@ -15,8 +15,17 @@
  */
 package org.glavo.kaca.index;
 
+import java.util.Objects;
+
 public /* sealed */ abstract class KacaIndexType {
     KacaIndexType() {
+    }
+
+    public void checkIndex(KacaIndex index) {
+        Objects.requireNonNull(index);
+        if (!index.getType().equals(this)) {
+            throw new IllegalArgumentException("Index type mismatch: " + index);
+        }
     }
 
     public abstract KacaIndexBuilder newBuilder();

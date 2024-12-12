@@ -15,6 +15,8 @@
  */
 package org.glavo.kaca.index;
 
+import org.jetbrains.annotations.ApiStatus;
+
 public final class DigestKacaIndex extends KacaIndex {
     private final DigestKacaIndexType type;
     private final byte[] digest;
@@ -33,5 +35,10 @@ public final class DigestKacaIndex extends KacaIndex {
 
     public byte[] getDigest() {
         return digest.clone();
+    }
+
+    @ApiStatus.Internal
+    public byte[] getDigestNoCopy() {
+        return digest;
     }
 }

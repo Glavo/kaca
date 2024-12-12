@@ -61,4 +61,14 @@ public final class DigestKacaIndexType extends KacaIndexType {
             }
         };
     }
+
+    @Override
+    public int hashCode() {
+        return DigestKacaIndexType.class.hashCode() ^ name.hashCode();
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        return obj instanceof DigestKacaIndexType && this.name.equals(((DigestKacaIndexType) obj).name);
+    }
 }

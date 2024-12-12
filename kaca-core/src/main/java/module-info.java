@@ -15,6 +15,7 @@
  */
 module org.glavo.kaca {
     requires static org.tukaani.xz;
+    requires org.jetbrains.annotations;
 
     exports org.glavo.kaca.index;
     exports org.glavo.kaca.object;
