@@ -43,6 +43,10 @@ public final class LocalKacaRepository extends KacaRepository {
 
     @Override
     public KacaIndex putObject(KacaObjectType type, KacaObjectOptions options, InputStream data) {
+        checkWritable();
+
+
+
         throw new UnsupportedOperationException(); // TODO
     }
 

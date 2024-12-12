@@ -15,10 +15,12 @@
  */
 package org.glavo.kaca.index;
 
-public /* sealed */ abstract class KacaIndex {
+public interface KacaIndexBuilder {
+    void update(byte[] data, int offset, int length);
 
-    KacaIndex() {
+    default void update(byte[] data) {
+        update(data, 0, data.length);
     }
 
-    public abstract KacaIndexType getType();
+    KacaIndex build();
 }

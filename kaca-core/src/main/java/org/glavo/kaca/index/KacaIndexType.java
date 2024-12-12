@@ -15,7 +15,9 @@
  */
 package org.glavo.kaca.index;
 
-public enum KacaIndexType {
-    SHA256,
-    SHA512
+public /* sealed */ abstract class KacaIndexType {
+    KacaIndexType() {
+    }
+
+    public abstract KacaIndexBuilder newBuilder();
 }

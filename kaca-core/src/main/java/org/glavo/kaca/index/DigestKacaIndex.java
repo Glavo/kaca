@@ -15,10 +15,23 @@
  */
 package org.glavo.kaca.index;
 
-public /* sealed */ abstract class KacaIndex {
+public final class DigestKacaIndex extends KacaIndex {
+    private final DigestKacaIndexType type;
+    private final byte[] digest;
 
-    KacaIndex() {
+    DigestKacaIndex(DigestKacaIndexType type, byte[] digest) {
+        assert digest.length == type.getDigestLength();
+
+        this.type = type;
+        this.digest = digest;
     }
 
-    public abstract KacaIndexType getType();
+    @Override
+    public DigestKacaIndexType getType() {
+        return type;
+    }
+
+    public byte[] getDigest() {
+        return digest.clone();
+    }
 }
