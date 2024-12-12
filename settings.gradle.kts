@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-rootProject.name = "kaca-base"
+rootProject.name = "kaca"
 
 include(
-    "kaca"
+    "kaca-core"
 )
