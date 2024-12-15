@@ -153,13 +153,25 @@ public final class LocalKacaRepository extends KacaRepository {
         }) {
             consumer.accept(wrappedOutputStream);
         } catch (Throwable e) {
-            throw new IOException("Some exception occurred during the call to the consumer", e);
+            IOException ioe = new IOException("Some exception occurred during the call to the consumer", e);
+
+            try {
+                Files.deleteIfExists(tempFile);
+            } catch (IOException e2) {
+                ioe.addSuppressed(e2);
+            }
+            throw ioe;
         }
 
         if (!errors.isEmpty()) {
             IOException e = new IOException("Some exception occurred during the call to the consumer");
             for (Throwable error : errors) {
                 e.addSuppressed(error);
+            }
+            try {
+                Files.deleteIfExists(tempFile);
+            } catch (IOException e2) {
+                e.addSuppressed(e2);
             }
             throw e;
         }
