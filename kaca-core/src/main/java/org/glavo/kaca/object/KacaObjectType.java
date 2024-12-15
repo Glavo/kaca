@@ -15,19 +15,39 @@
  */
 package org.glavo.kaca.object;
 
+import org.glavo.kaca.internal.util.LittleEndian;
+
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
 
 public enum KacaObjectType {
-    FILE("FILE"),
-    SNAPSHOT("SNAP"),
+    FILE,
+    SNAP,
     ;
+
+    private static final Map<Integer, KacaObjectType> map = new HashMap<>();
+
+    static {
+        for (KacaObjectType type : values()) {
+            map.put(LittleEndian.getInt(type.header, 0), type);
+        }
+    }
+
+    public static KacaObjectType lookup(byte[] array) {
+        return lookup(array, 0);
+    }
+
+    public static KacaObjectType lookup(byte[] array, int offset) {
+        return map.get(LittleEndian.getInt(array, offset));
+    }
 
     private final byte[] header;
 
-    KacaObjectType(String header) {
-        if (header.length() != 4) {
-            throw new AssertionError("Invalid header: " + header);
+    KacaObjectType() {
+        if (name().length() != 4) {
+            throw new AssertionError("Invalid header: " + name());
         }
-        this.header = header.getBytes(StandardCharsets.US_ASCII);
+        this.header = name().getBytes(StandardCharsets.US_ASCII);
     }
 }
