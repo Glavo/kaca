@@ -15,16 +15,15 @@
  */
 package org.glavo.kaca.index;
 
+import org.glavo.kaca.internal.util.Hex;
 import org.jetbrains.annotations.ApiStatus;
 
 public final class DigestKacaIndex extends KacaIndex {
-    private final DigestKacaIndexType type;
 
-    private final long length;
+    private final DigestKacaIndexType type;
     private final byte[] digest;
 
-    DigestKacaIndex(DigestKacaIndexType type, long length, byte[] digest) {
-        this.length = length;
+    DigestKacaIndex(DigestKacaIndexType type, byte[] digest) {
         assert digest.length == type.getDigestLength();
 
         this.type = type;
@@ -36,12 +35,12 @@ public final class DigestKacaIndex extends KacaIndex {
         return type;
     }
 
-    public long getLength() {
-        return length;
-    }
-
     public byte[] getDigest() {
         return digest.clone();
+    }
+
+    public String getDigestToString() {
+        return Hex.encodeHex(digest);
     }
 
     @ApiStatus.Internal

@@ -19,6 +19,7 @@ import org.glavo.kaca.index.DigestKacaIndex;
 import org.glavo.kaca.index.KacaIndex;
 import org.glavo.kaca.index.KacaIndexBuilder;
 import org.glavo.kaca.index.KacaIndexType;
+import org.glavo.kaca.internal.util.Hex;
 import org.glavo.kaca.object.KacaObjectOptions;
 import org.glavo.kaca.object.KacaObjectType;
 
@@ -34,6 +35,8 @@ public final class LocalKacaRepository extends KacaRepository {
     private final Path repositoryPath;
     private final FileChannel lockFileChannel;
 
+    private final Path objectsPath;
+
     private byte[] ioBuffer;
 
     private LocalKacaRepository(boolean isReadOnly, KacaIndexType indexType,
@@ -41,6 +44,8 @@ public final class LocalKacaRepository extends KacaRepository {
         super(isReadOnly, indexType);
         this.repositoryPath = repositoryPath;
         this.lockFileChannel = lockFileChannel;
+
+        this.objectsPath = repositoryPath.resolve("objects");
     }
 
     //region Private Member
@@ -66,8 +71,9 @@ public final class LocalKacaRepository extends KacaRepository {
 
         if (index instanceof DigestKacaIndex) {
             DigestKacaIndex digestKacaIndex = (DigestKacaIndex) index;
-            byte[] digest = digestKacaIndex.getDigestNoCopy();
 
+            return objectsPath.resolve(Hex.encodeHex(digestKacaIndex.getDigestNoCopy()[0]))
+                    .resolve(digestKacaIndex.getDigestToString());
         } else {
             throw new AssertionError("Unsupported index: " + index);
         }
