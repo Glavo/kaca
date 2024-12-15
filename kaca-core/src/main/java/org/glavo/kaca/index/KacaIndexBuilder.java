@@ -16,6 +16,9 @@
 package org.glavo.kaca.index;
 
 public interface KacaIndexBuilder {
+
+    void update(byte b);
+
     void update(byte[] data, int offset, int length);
 
     default void update(byte[] data) {

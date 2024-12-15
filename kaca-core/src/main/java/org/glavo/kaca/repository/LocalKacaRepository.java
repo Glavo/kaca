@@ -15,6 +15,7 @@
  */
 package org.glavo.kaca.repository;
 
+import org.glavo.kaca.function.CheckedConsumer;
 import org.glavo.kaca.index.DigestKacaIndex;
 import org.glavo.kaca.index.KacaIndex;
 import org.glavo.kaca.index.KacaIndexBuilder;
@@ -29,6 +30,7 @@ import java.io.OutputStream;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 
 public final class LocalKacaRepository extends KacaRepository {
 
@@ -64,7 +66,22 @@ public final class LocalKacaRepository extends KacaRepository {
         return tmpDir;
     }
 
+    private void putTempObjectFile(KacaIndex index, Path tempFile) throws IOException {
+        Path objectFile = getObjectFile(index);
+
+        if (Files.exists(objectFile)) {
+            throw new UnsupportedOperationException(); // TODO
+        }
+
+        Files.createDirectories(objectFile.getParent());
+        Files.move(tempFile, objectFile);
+    }
+
     //endregion
+
+    public Path getRepositoryPath() {
+        return repositoryPath;
+    }
 
     public Path getObjectFile(KacaIndex index) {
         getIndexType().checkIndex(index);
@@ -79,65 +96,91 @@ public final class LocalKacaRepository extends KacaRepository {
         }
     }
 
-    public Path getRepositoryPath() {
-        return repositoryPath;
-    }
-
-    public OutputStream putObject(KacaObjectType type, KacaObjectOptions options) throws IOException {
+    @Override
+    public KacaIndex putObject(KacaObjectType type, KacaObjectOptions options, CheckedConsumer<OutputStream, ?> consumer) throws IOException {
         checkWritable();
 
         Path tempFile = Files.createTempFile(getTempDir(), "object-", ".tmp");
+
+        KacaIndexBuilder indexBuilder = getIndexType().newBuilder();
+
         //noinspection resource
         OutputStream out = Files.newOutputStream(tempFile);
+        ArrayList<Throwable> errors = new ArrayList<>();
 
-        return new OutputStream() {
-
-            private boolean closed = false;
-            private final byte[] singleBuffer = new byte[1];
-            private final KacaIndexBuilder indexBuilder = getIndexType().newBuilder();
-
+        try (OutputStream wrappedOutputStream = new OutputStream() {
             @Override
             public void write(int b) throws IOException {
-                singleBuffer[0] = (byte) (b);
-                write(singleBuffer, 0, 1);
+                try {
+                    indexBuilder.update((byte) b);
+                    out.write(b);
+                } catch (Throwable e) {
+                    errors.add(e);
+                    throw e;
+                }
             }
 
             @Override
             public void write(byte[] b, int off, int len) throws IOException {
-                indexBuilder.update(b, off, len);
-                out.write(b, off, len);
+                try {
+                    indexBuilder.update(b, off, len);
+                    out.write(b, off, len);
+                } catch (Throwable e) {
+                    errors.add(e);
+                    throw e;
+                }
             }
 
             @Override
             public void flush() throws IOException {
-                super.flush();
+                try {
+                    super.flush();
+                } catch (Throwable e) {
+                    errors.add(e);
+                    throw e;
+                }
             }
 
             @Override
             public void close() throws IOException {
-                if (closed) {
-                    return;
+                try {
+                    out.close();
+                } catch (Throwable e) {
+                    errors.add(e);
+                    throw e;
                 }
-                closed = true;
-                out.close();
-
-                // TODO: putObject
             }
-        };
+        }) {
+            consumer.accept(wrappedOutputStream);
+        } catch (Throwable e) {
+            throw new IOException("Some exception occurred during the call to the consumer", e);
+        }
+
+        if (!errors.isEmpty()) {
+            IOException e = new IOException("Some exception occurred during the call to the consumer");
+            for (Throwable error : errors) {
+                e.addSuppressed(error);
+            }
+            throw e;
+        }
+
+        KacaIndex index = indexBuilder.build();
+        putTempObjectFile(index, tempFile);
+        return index;
     }
 
     @Override
     public KacaIndex putObject(KacaObjectType type, KacaObjectOptions options, InputStream data) throws IOException {
         checkWritable();
 
-        KacaIndexBuilder builder = getIndexType().newBuilder();
+        KacaIndexBuilder indexBuilder = getIndexType().newBuilder();
         byte[] buffer = getIOBuffer();
 
         Path tempFile = Files.createTempFile(getTempDir(), "object-", ".tmp");
         try (OutputStream outputStream = Files.newOutputStream(tempFile)) {
             int n;
             while ((n = data.read(buffer)) > 0) {
-                builder.update(buffer, 0, n);
+                indexBuilder.update(buffer, 0, n);
                 outputStream.write(buffer, 0, n);
             }
         } catch (Throwable e) {
@@ -145,9 +188,9 @@ public final class LocalKacaRepository extends KacaRepository {
             throw e;
         }
 
-        KacaIndex index = builder.build();
-
-        throw new UnsupportedOperationException(); // TODO
+        KacaIndex index = indexBuilder.build();
+        putTempObjectFile(index, tempFile);
+        return index;
     }
 
     @Override

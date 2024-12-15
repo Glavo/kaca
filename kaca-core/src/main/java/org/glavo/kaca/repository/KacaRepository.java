@@ -15,6 +15,7 @@
  */
 package org.glavo.kaca.repository;
 
+import org.glavo.kaca.function.CheckedConsumer;
 import org.glavo.kaca.index.KacaIndex;
 import org.glavo.kaca.index.KacaIndexType;
 import org.glavo.kaca.object.KacaObjectOptions;
@@ -24,6 +25,7 @@ import java.io.ByteArrayInputStream;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 
 public abstract class KacaRepository implements Closeable {
 
@@ -50,6 +52,8 @@ public abstract class KacaRepository implements Closeable {
     }
 
     //region KacaObjects
+
+    public abstract KacaIndex putObject(KacaObjectType type, KacaObjectOptions options, CheckedConsumer<OutputStream, ?> consumer) throws IOException;
 
     public abstract KacaIndex putObject(KacaObjectType type, KacaObjectOptions options, InputStream data) throws IOException;
 

@@ -52,6 +52,11 @@ public final class DigestKacaIndexType extends KacaIndexType {
         return new KacaIndexBuilder() {
 
             @Override
+            public void update(byte data) {
+                digest.update(data);
+            }
+
+            @Override
             public void update(byte[] data, int offset, int length) {
                 digest.update(data, offset, length);
             }

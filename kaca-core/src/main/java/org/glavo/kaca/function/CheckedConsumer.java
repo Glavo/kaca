@@ -13,13 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-module org.glavo.kaca {
-    requires static org.tukaani.xz;
-    requires org.jetbrains.annotations;
+package org.glavo.kaca.function;
 
-    exports org.glavo.kaca.function;
-    exports org.glavo.kaca.index;
-    exports org.glavo.kaca.object;
-    exports org.glavo.kaca.repository;
-    exports org.glavo.kaca.snapshot;
+@FunctionalInterface
+public interface CheckedConsumer<T, Ex extends Throwable> {
+    void accept(T t) throws Ex;
 }
