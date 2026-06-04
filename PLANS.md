@@ -34,7 +34,7 @@ Architecture scope includes:
 - Retention and pruning.
 - Repository verification and repair.
 - Internal binary repository metadata.
-- User-editable repository configuration.
+- Layered user-editable configuration.
 - Scheduling and background operation.
 - Filesystem-level consistency integrations.
 - GUI and service interfaces.
@@ -42,9 +42,9 @@ Architecture scope includes:
 
 Implementation can still be staged. The plan must distinguish architecture coverage from implementation order.
 
-### 2.1 Repository Metadata and User Configuration
+### 2.1 Repository Metadata and Layered Configuration
 
-Repository metadata and user-editable configuration are separate files.
+Repository metadata and user-editable configuration are separate concerns.
 
 `repository.meta` is internal binary metadata managed by the program. It stores stable repository identity and format data:
 
@@ -59,18 +59,43 @@ Repository metadata and user-editable configuration are separate files.
 - Public encryption and key derivation parameters.
 - Creation time.
 
-`config.toml` is user-editable configuration. It stores operational preferences:
+Configuration files use a layered model:
+
+```text
+command invocation overrides
+job configuration
+repository-local client configuration
+repository configuration
+user configuration
+system configuration
+built-in defaults
+```
+
+Repository configuration is stored in `config.toml`. It contains portable repository policy:
+
+- Retention defaults.
+- Recovery record defaults.
+- Repository metadata capture default.
+- Extension policy.
+
+Repository-local client configuration is stored in `local/config.toml`. It contains machine-specific and client-specific defaults:
 
 - Remotes.
-- Recovery record defaults.
-- Retention defaults.
-- Filesystem metadata capture and restore defaults.
-- Scheduling preferences.
-- UI and service settings.
+- Credential references.
+- Restore defaults.
+- UI preferences.
+- Service settings.
+
+Job configuration is stored in `jobs/*.toml` or a user-level job directory. It contains repeatable snapshot task definitions:
+
+- Source paths.
+- Schedule expressions.
+- Include and exclude patterns.
+- Per-job metadata capture override.
 
 Changing `config.toml` preserves existing object identity and repository format. Changes that affect immutable repository structure require an explicit repository migration.
 
-Concrete repository binary formats are defined in `docs/repository-format.md`. The user-editable configuration schema is defined in `docs/configuration.md`.
+Concrete repository binary formats are defined in `docs/repository-format.md`. The layered configuration schema is defined in `docs/configuration.md`.
 
 ## 3. Core Principles
 
@@ -399,7 +424,7 @@ Recovery records protect the physical repository bytes.
 The recovery layer should operate after compression and encryption:
 
 ```text
-object-envelope files + snapshot record files + repository metadata files + user config files -> recovery record set
+object-envelope files + pack files + snapshot record files + repository metadata files + repository config files -> recovery record set
 ```
 
 This allows recovery tools to repair corrupted encrypted objects without needing the encryption key.
@@ -713,9 +738,14 @@ Identical file bytes reuse the same content object across snapshots. Captured me
 The repository supports separate capture and restore profiles:
 
 ```toml
+[policy.metadata]
+default_capture = "portable"
+```
+
+```toml
 [metadata]
-capture = "portable"
 restore = "portable"
+restore_errors = "warn"
 ```
 
 Capture profile values:
@@ -732,7 +762,7 @@ Restore profile values:
 
 The restore profile may have lower fidelity than the captured profile. Metadata restore failures are recorded in the restore report with the affected path, metadata field, platform error, and applied fallback.
 
-Metadata profile changes in `config.toml` affect new snapshots and restore operations. Existing snapshot objects keep the metadata captured at snapshot creation time.
+Capture profile resolution uses command invocation overrides, job configuration, repository-local client configuration, repository policy, user configuration, system configuration, and built-in defaults. Restore profile resolution uses command invocation overrides, repository-local client configuration, user configuration, system configuration, and built-in defaults. Existing snapshot objects keep the metadata captured at snapshot creation time.
 
 ### 3.10 Sparse Restore and Checkout
 
@@ -813,6 +843,10 @@ repository/
   repository.meta
   config.toml
   lock
+  local/
+    config.toml
+  jobs/
+    <job-name>.toml
   objects/
     ab/
       abcdef...
@@ -832,7 +866,9 @@ repository/
 Notes:
 
 - `repository.meta` stores binary internal metadata such as repository ID, repository format version, object format version, hash algorithm, metadata encoding, canonical compression profile, object layout, encryption mode, key derivation public parameters, and creation time.
-- `config.toml` stores user-editable configuration such as remotes, metadata capture defaults, metadata restore defaults, recovery record defaults, retention defaults, scheduling preferences, and UI or service settings.
+- `config.toml` stores repository policy such as retention defaults, recovery record defaults, repository metadata capture defaults, and extension policy.
+- `local/config.toml` stores client-local configuration such as remotes, credential references, restore defaults, service settings, and UI preferences.
+- `jobs` stores repeatable snapshot job definitions such as source paths, schedules, filters, and per-job capture overrides.
 - `lock` prevents multiple processes from writing to the repository at the same time.
 - `objects` stores untyped physical object envelopes keyed by object ID.
 - `packs` stores immutable packed object files and pack indexes.
@@ -845,7 +881,7 @@ Indexes can remain rebuildable from snapshot records and objects when needed.
 
 The concrete binary formats for `repository.meta`, object envelopes, structured payloads, pack files, and pack indexes are defined in `docs/repository-format.md`.
 
-The concrete `config.toml` schema is defined in `docs/configuration.md`.
+The concrete layered configuration schema is defined in `docs/configuration.md`.
 
 ## 5. Snapshot Object Draft
 
@@ -905,7 +941,7 @@ Additional fields to define:
 
 ### 6.1 Repository
 
-Manages repository initialization, internal metadata loading, user configuration loading, locking, path layout, and format compatibility.
+Manages repository initialization, internal metadata loading, layered configuration loading, locking, path layout, and format compatibility.
 
 Suggested capabilities:
 
@@ -914,6 +950,9 @@ Suggested capabilities:
 - `lock`
 - `unlock`
 - `checkFormatVersion`
+- `loadConfigLayers`
+- `resolveConfigValue`
+- `showConfigOrigins`
 
 ### 6.2 Scanner
 
@@ -1098,6 +1137,8 @@ kaca restore <snapshot-id> <target> --repo <repository> --include <pattern> --ex
 kaca verify --repo <repository>
 kaca prune --repo <repository> --keep-daily 7 --keep-weekly 4
 kaca stats --repo <repository>
+kaca config get <key> --repo <repository> --show-origin
+kaca config list --repo <repository> --show-origin
 kaca repair --repo <repository>
 kaca recovery create --repo <repository> --redundancy 10
 kaca recovery create --repo <repository> --redundancy 10 --output <recovery-directory>
@@ -1312,6 +1353,9 @@ Basic test scenarios:
 - Verify that recovery records detect physical file corruption.
 - Verify that recovery records can repair a damaged protected file when enough redundancy is available.
 - Verify that external recovery records can be matched to the correct repository by repository ID.
+- Verify layered configuration precedence from system, user, repository, repository-local, job, and command invocation layers.
+- Verify that effective configuration diagnostics report the source file and layer for resolved values.
+- Verify that repository-local remote definitions override lower-layer remotes with the same name.
 - Create a chunked large-file snapshot and restore it byte-for-byte.
 - Verify that file-level content hash is independent of chunk boundaries.
 - Verify that chunk boundaries respect `minSize` and `maxSize`.
@@ -1351,7 +1395,7 @@ Basic test scenarios:
 
 ## 12. Implementation Sequence
 
-1. Implement the repository binary format, user configuration schema, mutable snapshot record format, encryption extension points, recovery record layout, and manifest schema.
+1. Implement the repository binary format, layered configuration schema, mutable snapshot record format, encryption extension points, recovery record layout, and manifest schema.
 2. Implement `Repository` and compressed `ObjectStore`.
 3. Implement `Scanner` and file-level `Hasher`.
 4. Implement snapshot object writing and mutable snapshot records.

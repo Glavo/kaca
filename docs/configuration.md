@@ -1,13 +1,112 @@
-# Repository Configuration
+# Configuration Model
 
-This document defines the user-editable `config.toml` format.
+This document defines the user-editable configuration files used by `kaca`.
 
-`config.toml` stores operational preferences. Repository identity, object identity, hash algorithm, object layout, canonical compression profile, encryption mode, and repository format versions are stored in `repository.meta`.
+Repository identity, object identity, digest profiles, object layout, canonical compression profile, encryption mode, and repository format versions are stored in `repository.meta`. Configuration files store policy, defaults, local client settings, remote endpoints, and job definitions.
 
-## 1. File Shape
+## 1. Configuration Layers
+
+Configuration is resolved from ordered layers:
+
+```text
+command invocation overrides
+job configuration
+repository-local client configuration
+repository configuration
+user configuration
+system configuration
+built-in defaults
+```
+
+Higher layers override lower layers for scalar fields. Map fields merge by key. Array fields replace the lower-layer value unless the field defines a keyed merge rule.
+
+Configuration file locations:
+
+| Layer | Path |
+|---|---|
+| System configuration | platform configuration directory, `kaca/config.toml` |
+| User configuration | user configuration directory, `kaca/config.toml` |
+| Repository configuration | `<repository>/config.toml` |
+| Repository-local client configuration | `<repository>/local/config.toml` |
+| Job configuration | `<repository>/jobs/<job-name>.toml` or user configuration job directory |
+
+The parser accepts the keys defined for the file's layer. Extension data is stored under `[extensions.<name>]`.
+
+Repository synchronization includes repository configuration and repository state. Repository-local client configuration is resolved by the local client that owns the `local` directory.
+
+## 2. Repository Configuration
+
+`<repository>/config.toml` stores repository policy and portable repository defaults.
 
 ```toml
 config_version = 1
+
+[policy.metadata]
+default_capture = "portable"
+
+[policy.retention]
+keep_daily = 7
+keep_weekly = 4
+keep_monthly = 12
+keep_yearly = 0
+
+[policy.recovery]
+enabled = false
+redundancy_percent = 10
+placement = "repository"
+
+[extensions.example]
+enabled = true
+```
+
+### 2.1 Top-Level Keys
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `config_version` | integer | required | Configuration format version. |
+
+### 2.2 `[policy.metadata]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `default_capture` | string | `"portable"` | Repository default filesystem metadata capture profile for new snapshots. |
+
+### 2.3 `[policy.retention]`
+
+| Key | Type | Default | Description |
+|---|---:|---:|---|
+| `keep_daily` | integer | 7 | Number of daily snapshots retained by default. |
+| `keep_weekly` | integer | 4 | Number of weekly snapshots retained by default. |
+| `keep_monthly` | integer | 12 | Number of monthly snapshots retained by default. |
+| `keep_yearly` | integer | 0 | Number of yearly snapshots retained by default. |
+
+Retention values are non-negative integers.
+
+### 2.4 `[policy.recovery]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | boolean | `false` | Default recovery record generation switch. |
+| `redundancy_percent` | integer | 10 | Default recovery redundancy percentage. |
+| `placement` | string | `"repository"` | Default recovery output placement. |
+| `external_path` | string | absent | External recovery output path when `placement = "external"`. |
+
+`placement` values:
+
+| Value | Meaning |
+|---|---|
+| `"repository"` | Store recovery records under the repository `recovery` directory. |
+| `"external"` | Store recovery records under `external_path`. |
+
+`redundancy_percent` is an integer from 1 through 100.
+
+## 3. Client Configuration
+
+System, user, and repository-local client configuration files use the same schema. Repository-local client configuration is stored at `<repository>/local/config.toml`.
+
+```toml
+config_version = 1
+client_id = "desktop-main"
 
 [metadata]
 capture = "portable"
@@ -18,46 +117,35 @@ restore_errors = "warn"
 overwrite = "ask"
 target_conflicts = "fail"
 
-[retention]
-keep_daily = 7
-keep_weekly = 4
-keep_monthly = 12
-keep_yearly = 0
-
-[recovery]
-enabled = false
-redundancy_percent = 10
-placement = "repository"
-
-[schedule]
-enabled = false
-
 [service]
 enabled = false
+listen = "127.0.0.1:0"
 
 [ui]
 theme = "system"
+locale = "en-US"
 
 [[remotes]]
 name = "origin"
 kind = "sftp"
 url = "sftp://backup.example.com/kaca/repository"
 trust = "untrusted"
+credentials = "keyring:kaca/origin"
+connections = 4
 ```
 
-The parser accepts the keys defined in this document. Extension data is stored under `[extensions.<name>]`.
-
-## 2. Top-Level Keys
+### 3.1 Top-Level Keys
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `config_version` | integer | required | User configuration format version. |
+| `config_version` | integer | required | Configuration format version. |
+| `client_id` | string | absent | Stable client identifier for diagnostics and multi-client conflict records. |
 
-## 3. `[metadata]`
+### 3.2 `[metadata]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `capture` | string | `"portable"` | Default filesystem metadata capture profile for new snapshots. |
+| `capture` | string | absent | Client default filesystem metadata capture profile for new snapshots. |
 | `restore` | string | `"portable"` | Default filesystem metadata restore profile for restore operations. |
 | `restore_errors` | string | `"warn"` | Handling mode for metadata restore failures. |
 
@@ -77,7 +165,7 @@ Metadata profile values:
 | `"fail"` | Treat metadata restore failures as restore failures. |
 | `"ignore"` | Suppress metadata restore failure reporting. |
 
-## 4. `[restore]`
+### 3.3 `[restore]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -100,53 +188,14 @@ Metadata profile values:
 | `"rename"` | Restore the conflicting path with a generated conflict suffix. |
 | `"overwrite"` | Apply the configured overwrite behavior. |
 
-## 5. `[retention]`
-
-| Key | Type | Default | Description |
-|---|---:|---:|---|
-| `keep_daily` | integer | 7 | Number of daily snapshots retained by default. |
-| `keep_weekly` | integer | 4 | Number of weekly snapshots retained by default. |
-| `keep_monthly` | integer | 12 | Number of monthly snapshots retained by default. |
-| `keep_yearly` | integer | 0 | Number of yearly snapshots retained by default. |
-
-Retention values are non-negative integers.
-
-## 6. `[recovery]`
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `enabled` | boolean | `false` | Default recovery record generation switch. |
-| `redundancy_percent` | integer | 10 | Default recovery redundancy percentage. |
-| `placement` | string | `"repository"` | Default recovery output placement. |
-| `external_path` | string | absent | External recovery output path when `placement = "external"`. |
-
-`placement` values:
-
-| Value | Meaning |
-|---|---|
-| `"repository"` | Store recovery records under the repository `recovery` directory. |
-| `"external"` | Store recovery records under `external_path`. |
-
-`redundancy_percent` is an integer from 1 through 100.
-
-## 7. `[schedule]`
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `enabled` | boolean | `false` | Enables scheduled snapshots. |
-| `calendar` | string | absent | Calendar expression for scheduled snapshots. |
-| `source` | string | absent | Default source path for scheduled snapshots. |
-
-The calendar expression format is a separate scheduler interface decision.
-
-## 8. `[service]`
+### 3.4 `[service]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | boolean | `false` | Enables background service integration. |
 | `listen` | string | absent | Service listen endpoint. |
 
-## 9. `[ui]`
+### 3.5 `[ui]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -161,9 +210,9 @@ The calendar expression format is a separate scheduler interface decision.
 | `"light"` |
 | `"dark"` |
 
-## 10. `[[remotes]]`
+### 3.6 `[[remotes]]`
 
-Each remote entry defines one synchronization target.
+Each remote entry defines one synchronization target for the active client.
 
 | Key | Type | Required | Description |
 |---|---|---|---|
@@ -199,9 +248,62 @@ credentials = "keyring:kaca/origin"
 credentials = "file:secrets/origin.credentials"
 ```
 
-Plain secret values are stored outside `config.toml`.
+Plain secret values are stored outside configuration files.
 
-## 11. Extensions
+## 4. Job Configuration
+
+Job configuration files define repeatable snapshot tasks.
+
+```toml
+job_version = 1
+name = "home"
+source = "D:/Users/example"
+repository = ".."
+
+[metadata]
+capture = "portable"
+
+[schedule]
+enabled = true
+calendar = "daily 02:00"
+
+[filters]
+include = ["**"]
+exclude = ["**/build/**", "**/.gradle/**"]
+```
+
+### 4.1 Top-Level Keys
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `job_version` | integer | required | Job configuration format version. |
+| `name` | string | required | Stable job name. |
+| `source` | string | required | Source path for snapshots created by the job. |
+| `repository` | string | absent | Repository path for user-level job files. |
+
+### 4.2 `[metadata]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `capture` | string | resolved | Filesystem metadata capture profile for snapshots created by the job. |
+
+### 4.3 `[schedule]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | boolean | `false` | Enables scheduled snapshots for the job. |
+| `calendar` | string | absent | Calendar expression for scheduled snapshots. |
+
+The calendar expression format is a separate scheduler interface decision.
+
+### 4.4 `[filters]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `include` | array of strings | absent | Include patterns for source scanning. |
+| `exclude` | array of strings | absent | Exclude patterns for source scanning. |
+
+## 5. Extensions
 
 Extensions use namespaced tables:
 
@@ -213,17 +315,46 @@ value = "custom"
 
 Extension names are lowercase ASCII identifiers containing letters, digits, `_`, and `-`.
 
-## 12. Validation Rules
+## 6. Value Resolution
+
+Effective values are resolved with origin tracking. Diagnostics and `config get` output include the layer and file path that supplied each value.
+
+Example resolution for snapshot metadata capture:
+
+```text
+command invocation override
+job [metadata].capture
+repository-local client [metadata].capture
+repository [policy.metadata].default_capture
+user [metadata].capture
+system [metadata].capture
+built-in default
+```
+
+Example resolution for restore behavior:
+
+```text
+command invocation override
+repository-local client [restore]
+user [restore]
+system [restore]
+built-in default
+```
+
+Remote definitions are keyed by remote name. A higher-layer remote with the same name replaces the lower-layer remote.
+
+## 7. Validation Rules
 
 The parser validates:
 
-- `config_version`.
-- Known top-level sections.
+- Configuration and job format versions.
+- Allowed sections for each configuration layer.
 - Field types.
 - Enum values.
 - Non-negative retention values.
 - Recovery redundancy range.
-- Unique remote names.
+- Unique remote names after layer resolution.
 - Extension table names.
+- Required job fields.
 
-Invalid configuration files produce diagnostics with table name, key name, invalid value, and expected value set.
+Invalid configuration files produce diagnostics with file path, layer, table name, key name, invalid value, and expected value set.
