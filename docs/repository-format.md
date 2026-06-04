@@ -53,7 +53,7 @@ Physical checksums are digest values whose type is `cryptographic-hash` or `fast
 
 Chunk boundary fingerprints are digest values whose type is `rolling-fingerprint`.
 
-Digest profile types:
+Digest profile registry:
 
 | ID | Type |
 |---:|---|
@@ -62,16 +62,18 @@ Digest profile types:
 | 3 | `fast-checksum` |
 | 4 | `rolling-fingerprint` |
 
-Cryptographic hash algorithms:
+### 2.1 Type 1: `cryptographic-hash`
 
-| Type | Algorithm ID | Algorithm |
-|---:|---:|---|
-| 1 | 1 | `sha-2` |
-| 1 | 2 | `sha-3` |
-| 1 | 3 | `blake3` |
-| 1 | 4 | `sm` |
+Algorithms:
 
-`sha-2` variants:
+| Algorithm ID | Algorithm |
+|---:|---|
+| 1 | `sha-2` |
+| 2 | `sha-3` |
+| 3 | `blake3` |
+| 4 | `sm` |
+
+#### 2.1.1 Algorithm 1: `sha-2`
 
 | Variant ID | Variant | Output bits |
 |---:|---|---:|
@@ -82,7 +84,7 @@ Cryptographic hash algorithms:
 | 5 | `sha-512/224` | 224 |
 | 6 | `sha-512/256` | 256 |
 
-`sha-3` variants:
+#### 2.1.2 Algorithm 2: `sha-3`
 
 | Variant ID | Variant | Output bits |
 |---:|---|---:|
@@ -91,28 +93,30 @@ Cryptographic hash algorithms:
 | 3 | `sha3-384` | 384 |
 | 4 | `sha3-512` | 512 |
 
-`blake3` variants:
+#### 2.1.3 Algorithm 3: `blake3`
 
 | Variant ID | Variant | Output bits |
 |---:|---|---:|
 | 1 | `blake3` | 256, 384, or 512 |
 
-`sm` variants:
+#### 2.1.4 Algorithm 4: `sm`
 
 | Variant ID | Variant | Output bits |
 |---:|---|---:|
 | 1 | `sm3` | 256 |
 
-Keyed cryptographic hash algorithms:
+### 2.2 Type 2: `keyed-cryptographic-hash`
 
-| Type | Algorithm ID | Algorithm |
-|---:|---:|---|
-| 2 | 1 | `hmac-sha-2` |
-| 2 | 2 | `hmac-sha-3` |
-| 2 | 3 | `keyed-blake3` |
-| 2 | 4 | `hmac-sm` |
+Algorithms:
 
-`hmac-sha-2` variants:
+| Algorithm ID | Algorithm |
+|---:|---|
+| 1 | `hmac-sha-2` |
+| 2 | `hmac-sha-3` |
+| 3 | `keyed-blake3` |
+| 4 | `hmac-sm` |
+
+#### 2.2.1 Algorithm 1: `hmac-sha-2`
 
 | Variant ID | Variant | Output bits |
 |---:|---|---:|
@@ -123,7 +127,7 @@ Keyed cryptographic hash algorithms:
 | 5 | `hmac-sha512/224` | 224 |
 | 6 | `hmac-sha512/256` | 256 |
 
-`hmac-sha-3` variants:
+#### 2.2.2 Algorithm 2: `hmac-sha-3`
 
 | Variant ID | Variant | Output bits |
 |---:|---|---:|
@@ -132,51 +136,55 @@ Keyed cryptographic hash algorithms:
 | 3 | `hmac-sha3-384` | 384 |
 | 4 | `hmac-sha3-512` | 512 |
 
-`keyed-blake3` variants:
+#### 2.2.3 Algorithm 3: `keyed-blake3`
 
 | Variant ID | Variant | Output bits |
 |---:|---|---:|
 | 1 | `blake3-keyed` | 256, 384, or 512 |
 
-`hmac-sm` variants:
+#### 2.2.4 Algorithm 4: `hmac-sm`
 
 | Variant ID | Variant | Output bits |
 |---:|---|---:|
 | 1 | `hmac-sm3` | 256 |
 
-Fast checksum algorithms:
+### 2.3 Type 3: `fast-checksum`
 
-| Type | Algorithm ID | Algorithm |
-|---:|---:|---|
-| 3 | 1 | `xxh3` |
-| 3 | 2 | `crc` |
+Algorithms:
 
-`xxh3` variants:
+| Algorithm ID | Algorithm |
+|---:|---|
+| 1 | `xxh3` |
+| 2 | `crc` |
+
+#### 2.3.1 Algorithm 1: `xxh3`
 
 | Variant ID | Variant | Output bits |
 |---:|---|---:|
 | 1 | `xxh3-128` | 128 |
 
-`crc` variants:
+#### 2.3.2 Algorithm 2: `crc`
 
 | Variant ID | Variant | Output bits |
 |---:|---|---:|
 | 1 | `crc32c` | 32 |
 
-Rolling fingerprint algorithms:
+### 2.4 Type 4: `rolling-fingerprint`
 
-| Type | Algorithm ID | Algorithm |
-|---:|---:|---|
-| 4 | 1 | `gear` |
-| 4 | 2 | `rabin` |
+Algorithms:
 
-`gear` variants:
+| Algorithm ID | Algorithm |
+|---:|---|
+| 1 | `gear` |
+| 2 | `rabin` |
+
+#### 2.4.1 Algorithm 1: `gear`
 
 | Variant ID | Variant | Output bits |
 |---:|---|---:|
 | 1 | `gear64` | 64 |
 
-`rabin` variants:
+#### 2.4.2 Algorithm 2: `rabin`
 
 | Variant ID | Variant | Output bits |
 |---:|---|---:|
