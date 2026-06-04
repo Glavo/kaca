@@ -172,7 +172,7 @@ kaca-tree-v1 := magic + version + canonical-binary-tree-body
 
 #### Pack Files
 
-Loose object files are simple, but large repositories can contain too many small files. Pack files group many objects into larger immutable physical files.
+Loose object files are repository-owned staging files for newly imported objects, repair output, and simple local operation. Pack files are the optimized physical layout for large repositories and remote synchronization. They group many immutable object envelopes into larger immutable physical files.
 
 Pack layout:
 
@@ -185,33 +185,38 @@ packs/
 A pack file stores object records. The pack index maps each object ID to its physical location:
 
 ```text
-objectId -> packId + offset + storedSize
+objectId -> packId + recordOffset + envelopeOffset + envelopeLength
 ```
 
-The simplest pack record stores the same object envelope bytes used by loose objects:
+Each pack record stores the same object envelope bytes used by loose objects:
 
 ```text
-pack record := object-envelope
+pack record := record-header + object-id + object-envelope
 ```
 
 Object verification, compression, encryption, and metadata parsing are identical for loose objects and packed objects.
 
-Pack files are immutable. New objects are written as loose objects or into new pack files. Pack replacement is performed by writing replacement packs and publishing them atomically.
+The pack ID is a digest value for the physical pack records. The pack file name and pack index file name use lowercase hexadecimal encoding of the complete pack ID digest value. Pack IDs identify transfer units, while object IDs remain the authoritative identity for repository contents.
+
+Pack files are immutable. New objects are written as loose objects or into new pack files. Pack replacement is performed by writing replacement packs and publishing them atomically. Repository correctness does not depend on mutable pack state.
+
+Pack indexes are sidecar lookup structures. A pack index is required for normal random access and remote inventory exchange, but it is rebuildable from the pack file. Verification must detect missing, stale, corrupt, or mismatched pack indexes.
 
 Pack creation flow:
 
 1. Select loose objects to pack.
 2. Write a temporary pack file.
-3. Write a temporary pack index.
-4. Verify every indexed object can be read from the pack.
-5. Atomically publish the pack and index.
-6. Remove packed loose objects only after verification succeeds.
+3. Compute the pack ID from the completed pack records.
+4. Write a temporary pack index.
+5. Verify every indexed object can be read from the pack.
+6. Atomically publish the pack and index.
+7. Remove packed loose objects only after verification succeeds.
 
 Pruning packed objects requires repacking. A prune operation computes live objects, writes new packs containing live objects, then removes obsolete packs after verification.
 
-Remote synchronization treats packs as immutable transfer units with resumable upload and verification.
+Remote synchronization treats packs as immutable transfer units with resumable upload and verification. A remote inventory can advertise pack IDs, pack sizes, and pack index summaries. Missing logical objects are resolved through pack indexes before transferring whole packs or selected loose objects.
 
-Recovery records protect pack files and pack indexes as physical repository files.
+Recovery records protect pack files and pack indexes as physical repository files. A repaired pack index may also be rebuilt from a verified pack file.
 
 #### Hash Collision Policy
 
@@ -589,7 +594,7 @@ Chunker parameters must be stored in the manifest or internal repository metadat
 
 Each chunk is compressed and encrypted independently after chunk boundaries are selected.
 
-Loose objects are a valid implementation slice. A pack format can group many small objects into pack files without changing snapshot manifests, as long as object IDs remain stable.
+Loose objects and packed objects share the same logical identity and manifest references. Packing changes only the physical location of an object envelope.
 
 Chunk-level deduplication is important for large mutable files and belongs in the architecture baseline. Its implementation can follow once whole-file references, snapshot objects, restore, `verify`, and `prune` are reliable.
 
@@ -972,7 +977,7 @@ Suggested capabilities:
 - Select loose objects for packing.
 - Write temporary pack files and indexes.
 - Publish packs atomically.
-- Resolve object IDs to pack offsets.
+- Resolve object IDs to pack record and envelope offsets.
 - Read object envelopes from packs.
 - Verify pack indexes against pack contents.
 - Repack live objects during pruning.
@@ -1335,7 +1340,7 @@ Basic test scenarios:
 - Should encrypted repositories encrypt recovery set manifests when recovery records are stored externally?
 - Should large file chunking use fixed-size chunks or rolling hash?
 - What large-file threshold should enable chunking by default?
-- Should loose objects be packed after snapshot creation?
+- What default pack size, pack object count, and automatic pack scheduling should be used?
 - What pattern syntax should sparse restore use?
 - Should long-lived sparse checkout state be stored in the target directory or in the repository?
 - Is a database index such as SQLite needed?
@@ -1358,4 +1363,4 @@ Basic test scenarios:
 10. Implement optional encryption.
 11. Implement optional recovery record creation, verification, and repair.
 12. Implement chunked large-object storage.
-13. Decide whether to add object pack files for chunk-heavy repositories.
+13. Implement pack file creation, pack indexes, remote pack transfer, and repacking.
