@@ -498,6 +498,17 @@ The remote layout can mirror the local repository layout, or it can use a provid
 
 Large files should be representable as ordered chunk references in the snapshot manifest. A chunk should use the same object envelope format as a whole-file object.
 
+Chunking must not change the logical identity of a file. A file's logical identity is based on its complete canonical file bytes, not on the chunk list used to store it.
+
+The file manifest entry should store file-level identity:
+
+```text
+fileContentHash = hash(complete-file-bytes)
+fileSize = complete-file-size
+```
+
+The chunk list is a storage representation for that file. Changing chunker parameters may change chunk boundaries and chunk object references, but it must not change `fileContentHash` for identical file bytes.
+
 Recommended logical pipeline for large files:
 
 ```text
@@ -514,6 +525,7 @@ The file-level manifest should preserve the complete logical file identity and t
   "modifiedAt": "2026-05-27T01:00:00Z",
   "object": {
     "kind": "chunked",
+    "contentHash": "abcdef...",
     "contentSize": 107374182400,
     "chunker": {
       "algorithm": "fastcdc",
@@ -1251,6 +1263,7 @@ Basic test scenarios:
 - Verify that recovery records can repair a damaged protected file when enough redundancy is available.
 - Verify that external recovery records can be matched to the correct repository by repository ID.
 - Create a chunked large-file snapshot and restore it byte-for-byte.
+- Verify that file-level content hash is independent of chunk boundaries.
 - Verify that chunk boundaries respect `minSize` and `maxSize`.
 - Verify that rolling hash state is used only for boundaries, not object identity.
 - Modify a large file in the middle and verify that unchanged chunks are reused.
