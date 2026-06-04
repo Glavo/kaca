@@ -30,6 +30,7 @@ Architecture scope includes:
 - Recovery records.
 - Chunked large-object storage.
 - Sparse restore and sparse checkout.
+- Filesystem metadata capture and restore profiles.
 - Retention and pruning.
 - Repository verification and repair.
 - Internal binary repository metadata.
@@ -63,6 +64,7 @@ Repository metadata and user-editable configuration are separate files.
 - Remotes.
 - Recovery record defaults.
 - Retention defaults.
+- Filesystem metadata capture and restore defaults.
 - Scheduling preferences.
 - UI and service settings.
 
@@ -688,7 +690,44 @@ The object ID for a metadata payload should be computed from the canonical uncom
 
 Mutable snapshot records outside the object pool may use JSON as user-editable catalog data.
 
-### 3.9 Sparse Restore and Checkout
+### 3.9 Filesystem Metadata Profiles
+
+Filesystem metadata belongs to snapshot and tree metadata. File content objects contain file bytes only.
+
+Content identity and metadata identity are separate:
+
+```text
+contentObjectId = hash(file-bytes)
+treeEntry = path + entryType + contentRef + capturedMetadata
+```
+
+Identical file bytes reuse the same content object across snapshots. Captured metadata is part of the structured snapshot or tree payload and affects the snapshot or tree object ID.
+
+The repository supports separate capture and restore profiles:
+
+```toml
+[metadata]
+capture = "portable"
+restore = "portable"
+```
+
+Capture profile values:
+
+- `portable` captures repository-relative path, entry type, content reference, logical size, modified time, executable bit, read-only bit, and symbolic link target.
+- `system` captures `portable` fields plus POSIX mode, uid, gid, user name, group name, and Windows file attributes.
+- `full` captures `system` fields plus ACLs, extended attributes, macOS flags, macOS resource fork metadata, Windows security descriptor, and Windows reparse point metadata.
+
+Restore profile values:
+
+- `portable` restores file bytes, directories, symbolic links, modified time, executable bit, and read-only bit.
+- `system` restores `portable` fields plus supported POSIX mode, ownership fields, and Windows file attributes according to platform capabilities and process privileges.
+- `full` restores `system` fields plus supported ACLs, extended attributes, macOS metadata, Windows security descriptors, and Windows reparse point metadata.
+
+The restore profile may have lower fidelity than the captured profile. Metadata restore failures are recorded in the restore report with the affected path, metadata field, platform error, and applied fallback.
+
+Metadata profile changes in `config.toml` affect new snapshots and restore operations. Existing snapshot objects keep the metadata captured at snapshot creation time.
+
+### 3.10 Sparse Restore and Checkout
 
 The snapshot model should support sparse restore: restoring only selected paths or path patterns from a snapshot.
 
@@ -726,7 +765,7 @@ kaca checkout list
 
 Sparse checkout state is local working-tree state. Snapshot pinning is the explicit mechanism for preserving repository reachability.
 
-### 3.10 Atomic Writes
+### 3.11 Atomic Writes
 
 Snapshot creation is transactional.
 
@@ -741,12 +780,13 @@ Write order:
 
 If the process is interrupted, the repository should be able to detect and clean temporary files through `repair` or `verify`.
 
-### 3.11 Verifiability
+### 3.12 Verifiability
 
 The repository must support integrity checks:
 
 - Snapshot records are parseable and point to valid snapshot objects.
 - Snapshot objects are parseable.
+- Snapshot metadata profiles and captured metadata fields are parseable.
 - Objects referenced by snapshot objects exist.
 - Object headers are parseable and compatible with the repository format.
 - Decompressed object content matches the logical content hash.
@@ -785,7 +825,7 @@ repository/
 Notes:
 
 - `repository.meta` stores binary internal metadata such as repository ID, repository format version, object format version, hash algorithm, metadata encoding, canonical compression profile, object layout, encryption mode, key derivation public parameters, and creation time.
-- `config.toml` stores user-editable configuration such as remotes, recovery record defaults, retention defaults, scheduling preferences, and UI or service settings.
+- `config.toml` stores user-editable configuration such as remotes, metadata capture defaults, metadata restore defaults, recovery record defaults, retention defaults, scheduling preferences, and UI or service settings.
 - `lock` prevents multiple processes from writing to the repository at the same time.
 - `objects` stores untyped physical object envelopes keyed by object ID.
 - `packs` stores immutable packed object files and pack indexes.
@@ -819,6 +859,7 @@ The example below is JSON for readability. The stored snapshot object should use
   "formatVersion": 1,
   "id": "snapshot-id",
   "createdAt": "2026-05-27T01:30:00Z",
+  "metadataProfile": "portable",
   "source": {
     "path": "D:\\Projects\\example"
   },
@@ -828,7 +869,11 @@ The example below is JSON for readability. The stored snapshot object should use
       "path": "docs/readme.md",
       "type": "file",
       "size": 1024,
-      "modifiedAt": "2026-05-27T01:00:00Z",
+      "metadata": {
+        "modifiedAt": "2026-05-27T01:00:00Z",
+        "executable": false,
+        "readonly": false
+      },
       "object": {
         "id": "abcdef...",
         "contentSize": 1024,
@@ -845,11 +890,14 @@ Additional fields to define:
 
 - Directory entries.
 - Symbolic link entries.
-- File permissions.
-- Windows file attributes.
-- Unix mode, uid, and gid.
+- Captured metadata profile.
+- Portable metadata fields.
+- POSIX mode, uid, gid, user name, and group name.
+- Windows file attributes and security descriptor.
 - Extended attributes.
 - ACLs.
+- macOS flags and resource fork metadata.
+- Windows reparse point metadata.
 - Case sensitivity policy.
 - Whole-file content references.
 - Chunked content references.
@@ -877,7 +925,7 @@ Suggested capabilities:
 - Walk directories.
 - Apply exclude rules.
 - Handle symbolic link policy.
-- Capture basic file metadata.
+- Capture filesystem metadata according to the active capture profile.
 - Detect files that change during scanning.
 
 ### 6.3 Hasher
@@ -974,7 +1022,8 @@ Suggested capabilities:
 - Restore selected paths by include and exclude patterns.
 - Detect target path conflicts.
 - Support dry run.
-- Restore timestamps and basic permissions.
+- Restore filesystem metadata according to the active restore profile.
+- Report metadata restore failures separately from content restore failures.
 - Restore chunked files by streaming ordered blob objects.
 
 ### 6.10 Verify
@@ -1039,10 +1088,12 @@ The CLI surface should cover the architecture scope, while individual commands c
 kaca init <repository>
 kaca init <repository> --encrypt
 kaca snapshot <source> --repo <repository>
+kaca snapshot <source> --repo <repository> --metadata-capture portable|system|full
 kaca list --repo <repository>
 kaca show <snapshot-id> --repo <repository>
 kaca diff <from-snapshot-id> <to-snapshot-id> --repo <repository>
 kaca restore <snapshot-id> <target> --repo <repository>
+kaca restore <snapshot-id> <target> --repo <repository> --metadata-restore portable|system|full
 kaca restore <snapshot-id> <target> --repo <repository> --path <path>
 kaca restore <snapshot-id> <target> --repo <repository> --include <pattern> --exclude <pattern>
 kaca verify --repo <repository>
@@ -1078,6 +1129,7 @@ The architecture baseline includes:
 - Compression.
 - Optional encryption.
 - Recovery records.
+- Filesystem metadata capture and restore profiles.
 - Sparse restore and sparse checkout.
 - Retention and pruning.
 - Verification and repair.
@@ -1089,6 +1141,7 @@ Implementation can be sliced without narrowing the architecture:
 
 - Repository format, object envelope, and local object storage.
 - Snapshot creation, listing, diff, restore, and sparse restore.
+- Filesystem metadata capture and restore profiles.
 - Verification, repair, pruning, and recovery record generation.
 - Optional encryption and encrypted metadata.
 - Remote repository synchronization.
@@ -1233,6 +1286,14 @@ Basic test scenarios:
 - Restore a single file.
 - Restore selected paths and verify that unrelated paths remain absent.
 - Restore with include and exclude patterns.
+- Create a snapshot with the default `portable` metadata capture profile.
+- Restore with the default `portable` metadata restore profile.
+- Create a snapshot with the `system` metadata capture profile on a supported platform.
+- Create a snapshot with the `full` metadata capture profile on a supported platform.
+- Restore a snapshot with a lower-fidelity restore profile than the captured profile.
+- Verify that metadata restore failures are reported with path, field, platform error, and fallback.
+- Verify that identical file bytes with different metadata reuse the same content object.
+- Verify that different captured metadata changes the containing snapshot or tree object ID.
 - Verify that duplicate files store only one object.
 - Verify that object scanning covers the unified object pool.
 - Verify that existing-object reuse checks logical size and repository hash compatibility.
@@ -1286,7 +1347,7 @@ Basic test scenarios:
 - What pattern syntax should sparse restore use?
 - Should long-lived sparse checkout state be stored in the target directory or in the repository?
 - Is a database index such as SQLite needed?
-- How should Windows ACLs and Unix permissions be represented in the architecture baseline?
+- How should unsupported platform metadata fields be represented in restore reports?
 - Should exclude rules be compatible with `.gitignore` syntax?
 - Should restore overwrite target files by default?
 - Should `snapshot` fail, skip, or produce a partial snapshot when it sees unstable files?
