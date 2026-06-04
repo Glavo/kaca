@@ -32,12 +32,41 @@ Architecture scope includes:
 - Sparse restore and sparse checkout.
 - Retention and pruning.
 - Repository verification and repair.
+- Internal binary repository metadata.
+- User-editable repository configuration.
 - Scheduling and background operation.
 - Filesystem-level consistency integrations.
 - GUI and service interfaces.
 - Multi-client conflict handling.
 
 Implementation can still be staged. The plan must distinguish architecture coverage from implementation order.
+
+### 2.1 Repository Metadata and User Configuration
+
+Repository metadata and user-editable configuration are separate files.
+
+`repository.meta` is internal binary metadata. Users should not edit it directly. It stores stable repository identity and format data:
+
+- Repository ID.
+- Repository format version.
+- Object format version.
+- Metadata encoding.
+- Hash algorithm.
+- Object layout.
+- Encryption mode.
+- Public encryption and key derivation parameters.
+- Creation time.
+
+`config.toml` is user-editable configuration. It stores operational preferences:
+
+- Remotes.
+- Default compression profile.
+- Recovery record defaults.
+- Retention defaults.
+- Scheduling preferences.
+- UI and service settings.
+
+Changing `config.toml` must not change existing object identity or repository format. Changes that affect immutable repository structure require an explicit repository migration.
 
 ## 3. Core Principles
 
@@ -184,7 +213,7 @@ Hash collisions are not expected with modern cryptographic hashes, but the repos
 Rules:
 
 - Use only cryptographic hashes for object identity.
-- Record the hash algorithm in repository config.
+- Record the hash algorithm in internal repository metadata.
 - Include object type and format domain separation in the hashed representation.
 - Store logical content size and object type in the object header.
 - Treat object equality as typed object identity, not as a bare hash string.
@@ -334,7 +363,7 @@ Recovery records should protect the physical repository bytes, not the logical f
 The recovery layer should operate after compression and encryption:
 
 ```text
-object-envelope files + snapshot record files + config files -> recovery record set
+object-envelope files + snapshot record files + repository metadata files + user config files -> recovery record set
 ```
 
 This allows recovery tools to repair corrupted encrypted objects without needing the encryption key.
@@ -401,7 +430,7 @@ The remote model should handle:
 - Mutable snapshot records.
 - Optional recovery record sets.
 - Rebuildable indexes.
-- Repository configuration and format negotiation.
+- Repository metadata, user configuration, and format negotiation.
 
 Immutable objects are content-addressed and can be synchronized by object ID:
 
@@ -483,7 +512,7 @@ For unencrypted repositories, chunk IDs can be content hashes of logical chunk b
 
 The preferred long-term chunking strategy is content-defined chunking, such as FastCDC, because it preserves deduplication when bytes are inserted or removed near the beginning of a large file. Fixed-size chunking is simpler but performs poorly after insertions or shifts.
 
-Chunker parameters must be stored in the manifest or repository config. Changing chunker parameters changes deduplication behavior, so a repository should treat them as part of the object format profile.
+Chunker parameters must be stored in the manifest or internal repository metadata. Changing chunker parameters changes deduplication behavior, so a repository should treat them as part of the object format profile.
 
 Each chunk should be compressed and encrypted independently. Do not compress a whole large file as one stream before chunking, because that would destroy chunk-level deduplication and make partial repair less useful.
 
@@ -662,7 +691,8 @@ A local repository can use this layout:
 
 ```text
 repository/
-  config.json
+  repository.meta
+  config.toml
   lock
   objects/
     data/
@@ -693,7 +723,8 @@ repository/
 
 Notes:
 
-- `config.json` stores the repository version, object format version, hash algorithm, default compression profile, encryption mode, recovery record settings, and creation time.
+- `repository.meta` stores binary internal metadata such as repository ID, repository format version, object format version, hash algorithm, metadata encoding, object layout, encryption mode, key derivation public parameters, and creation time.
+- `config.toml` stores user-editable configuration such as remotes, default compression profile, recovery record defaults, retention defaults, scheduling preferences, and UI or service settings.
 - `lock` prevents multiple processes from writing to the repository at the same time.
 - `objects` stores typed physical object envelopes in type partitions keyed by object ID.
 - `packs` stores immutable packed object files and pack indexes.
@@ -767,7 +798,7 @@ Additional fields to define:
 
 ### 6.1 Repository
 
-Manages repository initialization, configuration loading, locking, path layout, and format compatibility.
+Manages repository initialization, internal metadata loading, user configuration loading, locking, path layout, and format compatibility.
 
 Suggested capabilities:
 
@@ -1033,7 +1064,7 @@ Safe strategy:
 
 ### 9.3 Repository Format Upgrades
 
-Both `config.json` and manifest files must record `formatVersion`.
+Both `repository.meta` and metadata object formats must record `formatVersion`.
 
 When a newer program opens an older repository, it must clearly decide:
 
@@ -1084,7 +1115,7 @@ Changing chunker parameters can reduce deduplication efficiency or create confus
 Safe strategy:
 
 - Store chunker algorithm and parameters with every chunked file entry.
-- Record the repository default chunker profile in `config.json`.
+- Record the repository default chunker profile in `repository.meta`.
 - Allow reading old chunker profiles indefinitely.
 - Treat changes to default chunker parameters as an explicit repository configuration change.
 
@@ -1174,6 +1205,7 @@ Basic test scenarios:
 - Should high-assurance mode store or verify a secondary hash?
 - Should immutable metadata use canonical CBOR, deterministic Protocol Buffers, or a custom binary format?
 - What canonical encoding should be used for metadata object IDs?
+- Should user-editable configuration use TOML or a Git-style INI format?
 - Should very large snapshot manifests become tree-style metadata objects?
 - Which compression library and default compression level should be used?
 - What minimum size or compression ratio should decide whether an object is stored compressed or raw?
