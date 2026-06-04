@@ -23,19 +23,166 @@ Object identity is computed from canonical logical bytes before compression, enc
 
 ## 2. Algorithm Identifiers
 
-Hash algorithms:
+Digest algorithms use an 8-byte profile identifier:
 
-| ID | Algorithm | Digest length |
+```text
+digest-profile-id :=
+  type: u16
+  algorithm: u16
+  variant: u16
+  output-bits: u16
+```
+
+`type` selects the algorithm namespace for `algorithm`. `algorithm` selects the namespace for `variant`. `output-bits` is the actual digest output length in bits.
+
+Digest values store the profile followed by the digest bytes:
+
+```text
+digest-value :=
+  digest-profile-id
+  digest-bytes
+```
+
+The digest byte length is `output-bits / 8`.
+
+CBOR `bstr` fields named `digest profile` contain exactly the 8-byte `digest-profile-id`. CBOR `bstr` fields named `digest value` contain the complete `digest-value`.
+
+Object IDs are digest values whose type is `cryptographic-hash` or `keyed-cryptographic-hash`.
+
+Physical checksums are digest values whose type is `cryptographic-hash` or `fast-checksum`.
+
+Chunk boundary fingerprints are digest values whose type is `rolling-fingerprint`.
+
+Digest profile types:
+
+| ID | Type |
+|---:|---|
+| 1 | `cryptographic-hash` |
+| 2 | `keyed-cryptographic-hash` |
+| 3 | `fast-checksum` |
+| 4 | `rolling-fingerprint` |
+
+Cryptographic hash algorithms:
+
+| Type | Algorithm ID | Algorithm |
+|---:|---:|---|
+| 1 | 1 | `sha-2` |
+| 1 | 2 | `sha-3` |
+| 1 | 3 | `blake3` |
+| 1 | 4 | `sm` |
+
+`sha-2` variants:
+
+| Variant ID | Variant | Output bits |
 |---:|---|---:|
-| 1 | `sha256` | 32 |
-| 2 | `blake3-256` | 32 |
+| 1 | `sha-224` | 224 |
+| 2 | `sha-256` | 256 |
+| 3 | `sha-384` | 384 |
+| 4 | `sha-512` | 512 |
+| 5 | `sha-512/224` | 224 |
+| 6 | `sha-512/256` | 256 |
 
-Checksum algorithms:
+`sha-3` variants:
 
-| ID | Algorithm | Digest length |
+| Variant ID | Variant | Output bits |
 |---:|---|---:|
-| 1 | `sha256` | 32 |
-| 2 | `blake3-256` | 32 |
+| 1 | `sha3-224` | 224 |
+| 2 | `sha3-256` | 256 |
+| 3 | `sha3-384` | 384 |
+| 4 | `sha3-512` | 512 |
+
+`blake3` variants:
+
+| Variant ID | Variant | Output bits |
+|---:|---|---:|
+| 1 | `blake3` | 256, 384, or 512 |
+
+`sm` variants:
+
+| Variant ID | Variant | Output bits |
+|---:|---|---:|
+| 1 | `sm3` | 256 |
+
+Keyed cryptographic hash algorithms:
+
+| Type | Algorithm ID | Algorithm |
+|---:|---:|---|
+| 2 | 1 | `hmac-sha-2` |
+| 2 | 2 | `hmac-sha-3` |
+| 2 | 3 | `keyed-blake3` |
+| 2 | 4 | `hmac-sm` |
+
+`hmac-sha-2` variants:
+
+| Variant ID | Variant | Output bits |
+|---:|---|---:|
+| 1 | `hmac-sha224` | 224 |
+| 2 | `hmac-sha256` | 256 |
+| 3 | `hmac-sha384` | 384 |
+| 4 | `hmac-sha512` | 512 |
+| 5 | `hmac-sha512/224` | 224 |
+| 6 | `hmac-sha512/256` | 256 |
+
+`hmac-sha-3` variants:
+
+| Variant ID | Variant | Output bits |
+|---:|---|---:|
+| 1 | `hmac-sha3-224` | 224 |
+| 2 | `hmac-sha3-256` | 256 |
+| 3 | `hmac-sha3-384` | 384 |
+| 4 | `hmac-sha3-512` | 512 |
+
+`keyed-blake3` variants:
+
+| Variant ID | Variant | Output bits |
+|---:|---|---:|
+| 1 | `blake3-keyed` | 256, 384, or 512 |
+
+`hmac-sm` variants:
+
+| Variant ID | Variant | Output bits |
+|---:|---|---:|
+| 1 | `hmac-sm3` | 256 |
+
+Fast checksum algorithms:
+
+| Type | Algorithm ID | Algorithm |
+|---:|---:|---|
+| 3 | 1 | `xxh3` |
+| 3 | 2 | `crc` |
+
+`xxh3` variants:
+
+| Variant ID | Variant | Output bits |
+|---:|---|---:|
+| 1 | `xxh3-128` | 128 |
+
+`crc` variants:
+
+| Variant ID | Variant | Output bits |
+|---:|---|---:|
+| 1 | `crc32c` | 32 |
+
+Rolling fingerprint algorithms:
+
+| Type | Algorithm ID | Algorithm |
+|---:|---:|---|
+| 4 | 1 | `gear` |
+| 4 | 2 | `rabin` |
+
+`gear` variants:
+
+| Variant ID | Variant | Output bits |
+|---:|---|---:|
+| 1 | `gear64` | 64 |
+
+`rabin` variants:
+
+| Variant ID | Variant | Output bits |
+|---:|---|---:|
+| 1 | `rabin64` | 64 |
+
+For fixed-output variants, `output-bits` must equal the output bit length listed in the registry. For `blake3` and `blake3-keyed`, version 1 accepts `output-bits` values of 256, 384, and 512.
 
 Compression algorithms:
 
@@ -79,11 +226,10 @@ Fixed header:
 | 10 | 2 | flags |
 | 12 | 4 | header length |
 | 16 | 8 | body length |
-| 24 | 2 | checksum algorithm |
-| 26 | 2 | checksum length |
-| 28 | 4 | reserved zero |
+| 24 | 8 | checksum digest profile |
+| 32 | 8 | reserved zero |
 
-`header length` includes the fixed header and extension header. The fixed header length is 32 bytes. Version 1 uses an empty extension header.
+`header length` includes the fixed header and extension header. The fixed header length is 40 bytes. Version 1 uses an empty extension header.
 
 The checksum is computed over `fixed-header + extension-header + deterministic-cbor-body`.
 
@@ -95,8 +241,8 @@ Repository meta body:
 | 2 | uint | repository format version |
 | 3 | uint | object format version |
 | 4 | uint | metadata encoding |
-| 5 | uint | repository hash algorithm |
-| 6 | uint | repository hash length |
+| 5 | bstr | content digest profile |
+| 6 | bstr | object ID digest profile |
 | 7 | map | canonical compression profile |
 | 8 | map | object layout |
 | 9 | map | encryption mode |
@@ -129,17 +275,9 @@ Encryption mode map:
 
 | Key | Type | Field |
 |---:|---|---|
-| 1 | uint | object ID mode |
-| 2 | uint | payload encryption algorithm |
-| 3 | uint | manifest encryption mode |
-
-Object ID modes:
-
-| ID | Mode |
-|---:|---|
-| 0 | plaintext content hash |
-| 1 | HMAC over plaintext content hash |
-| 2 | keyed BLAKE3 over plaintext content hash |
+| 1 | uint | payload encryption algorithm |
+| 2 | uint | manifest encryption mode |
+| 3 | uint | mutable record encryption mode |
 
 Default chunker profile map:
 
@@ -193,14 +331,13 @@ Fixed header:
 | 16 | 8 | payload length |
 | 24 | 8 | logical size |
 | 32 | 2 | object ID length |
-| 34 | 2 | hash algorithm |
-| 36 | 2 | compression algorithm |
-| 38 | 2 | encryption algorithm |
+| 34 | 2 | compression algorithm |
+| 36 | 2 | encryption algorithm |
+| 38 | 2 | reserved zero |
 | 40 | 4 | public header length |
 | 44 | 4 | encrypted private header length |
-| 48 | 2 | physical checksum algorithm |
-| 50 | 2 | physical checksum length |
-| 52 | 12 | reserved zero |
+| 48 | 8 | physical checksum digest profile |
+| 56 | 8 | reserved zero |
 
 `header length` includes the fixed header, object ID, public header, and encrypted private header. The fixed header length is 64 bytes.
 
@@ -221,10 +358,8 @@ Encrypted private header body uses deterministic CBOR after decryption:
 
 | Key | Type | Field |
 |---:|---|---|
-| 1 | bstr | plaintext content hash |
-| 2 | uint | plaintext hash algorithm |
-| 3 | bstr | secondary plaintext hash |
-| 4 | uint | secondary hash algorithm |
+| 1 | bstr | plaintext content digest value |
+| 2 | bstr | secondary plaintext digest value |
 
 Public encryption parameters:
 
@@ -270,7 +405,7 @@ Snapshot body map:
 | 1 | bstr | snapshot ID |
 | 2 | uint | created time, Unix milliseconds |
 | 3 | map | source display information |
-| 4 | bstr / null | parent snapshot object ID |
+| 4 | bstr / null | parent snapshot object ID digest value |
 | 5 | uint | metadata capture profile |
 | 6 | map | root tree reference |
 | 7 | array | direct entries |
@@ -287,7 +422,7 @@ Tree reference map:
 
 | Key | Type | Field |
 |---:|---|---|
-| 1 | bstr | object ID |
+| 1 | bstr | object ID digest value |
 | 2 | uint | expected format |
 | 3 | uint | logical size |
 
@@ -333,9 +468,9 @@ Content reference map:
 | Key | Type | Field |
 |---:|---|---|
 | 1 | uint | content storage kind |
-| 2 | bstr | object ID for single-object content |
+| 2 | bstr | object ID digest value for single-object content |
 | 3 | uint | logical size |
-| 4 | bstr | file content hash |
+| 4 | bstr | file content digest value |
 | 5 | array | chunk references |
 
 Content storage kinds:
@@ -349,7 +484,7 @@ Chunk reference map:
 
 | Key | Type | Field |
 |---:|---|---|
-| 1 | bstr | object ID |
+| 1 | bstr | object ID digest value |
 | 2 | uint | file offset |
 | 3 | uint | logical size |
 | 4 | uint | stored size |
@@ -431,8 +566,7 @@ Pack footer:
 
 | Size | Field |
 |---:|---|
-| 2 | checksum algorithm |
-| 2 | checksum length |
+| 8 | checksum digest profile |
 | n | checksum over pack header and object records |
 
 ## 7. Pack Index Files
@@ -454,9 +588,7 @@ Index header:
 | 12 | 4 | header length |
 | 16 | 8 | body length |
 | 24 | 32 | pack ID |
-| 56 | 2 | checksum algorithm |
-| 58 | 2 | checksum length |
-| 60 | 4 | reserved zero |
+| 56 | 8 | checksum digest profile |
 
 Index body map:
 
@@ -468,10 +600,10 @@ Index entry map:
 
 | Key | Type | Field |
 |---:|---|---|
-| 1 | bstr | object ID |
+| 1 | bstr | object ID digest value |
 | 2 | uint | pack offset |
 | 3 | uint | envelope length |
 | 4 | uint | logical size |
-| 5 | bstr | physical checksum |
+| 5 | bstr | physical checksum digest value |
 
 The checksum is computed over `index-header + deterministic-cbor-body`.
