@@ -41,6 +41,8 @@ File content is stored in the object store by content hash. If multiple snapshot
 
 The object identity is based on the logical uncompressed content. Physical object files may be compressed, but deduplication should still be based on the original content bytes.
 
+Metadata objects, such as snapshot manifests, should also use the object store, but their IDs must be domain-separated from file content objects. A snapshot object ID should be computed from its canonical typed metadata body, not from file content bytes.
+
 The initial version should use file-level deduplication:
 
 - Hash small and regular files as whole files.
@@ -63,6 +65,7 @@ payload := raw-content | compressed-content
 The object header should be minimal and versioned. In an unencrypted repository, it should identify:
 
 - Object format version.
+- Object type.
 - Content hash algorithm.
 - Logical content hash.
 - Logical content size.
@@ -73,7 +76,7 @@ In an encrypted repository, public headers must not expose logical content hashe
 
 The payload may be stored uncompressed when compression is disabled for that object or when compression does not reduce size enough. The header must explicitly record that decision.
 
-The object path should still be derived from the logical content hash:
+The object path should be derived from the object ID:
 
 ```text
 objects/
@@ -83,7 +86,7 @@ objects/
         abcdef...
 ```
 
-This keeps deduplication stable even if the physical storage format changes later.
+For data objects, the object ID should be derived from the logical content hash. For metadata objects, the object ID should be derived from a canonical typed metadata encoding. This keeps deduplication and metadata integrity stable even if the physical storage format changes later.
 
 ### 3.4 Optional Encryption
 
@@ -114,7 +117,7 @@ Recovery records should protect the physical repository bytes, not the logical f
 The recovery layer should operate after compression and encryption:
 
 ```text
-object-envelope files + snapshot files + config files -> recovery record set
+object-envelope files + snapshot ref files + config files -> recovery record set
 ```
 
 This allows recovery tools to repair corrupted encrypted objects without needing the encryption key.
@@ -222,26 +225,63 @@ Each chunk should be compressed and encrypted independently. Do not compress a w
 
 The first implementation may keep chunk objects as loose object files. A later pack format can group many small chunks into pack files without changing snapshot manifests, as long as chunk IDs remain stable.
 
-### 3.7 Atomic Writes
+### 3.7 Snapshot Metadata as Objects
+
+Snapshot contents should be committed as typed metadata objects in the same repository object store used by file and chunk objects.
+
+The `snapshots` directory should store refs, not full manifest bodies:
+
+```text
+snapshots/
+  2026-05-27T01-30-00Z-<snapshot-id>.ref
+```
+
+A snapshot ref points to the actual snapshot object:
+
+```json
+{
+  "formatVersion": 1,
+  "snapshotId": "sha256:...",
+  "createdAt": "2026-05-27T01:30:00Z",
+  "object": "sha256:..."
+}
+```
+
+The snapshot object payload contains the snapshot manifest. This gives snapshot metadata the same benefits as data objects:
+
+- Compression.
+- Optional encryption.
+- Integrity checks.
+- Recovery record protection.
+- Atomic object writes.
+- Uniform object reachability for `prune`.
+
+Snapshot refs remain necessary because content-addressed objects alone are not discoverable roots. `prune` should treat snapshot refs as reachability roots, then walk snapshot objects and their referenced data objects.
+
+The initial implementation can store one snapshot manifest as one snapshot object. A later tree-style metadata model can split very large manifests into reusable directory metadata objects without changing the snapshot ref model.
+
+### 3.8 Atomic Writes
 
 Snapshot creation must not leave behind a half-successful snapshot.
 
 Recommended write order:
 
 1. Write new content objects.
-2. Write a temporary snapshot manifest.
-3. Verify that all objects referenced by the temporary manifest exist.
-4. Atomically move the temporary manifest into the final snapshot location.
-5. Update indexes.
+2. Write the snapshot manifest as a temporary snapshot object.
+3. Verify that all objects referenced by the snapshot object exist.
+4. Atomically move the snapshot object into the object store.
+5. Atomically write the snapshot ref.
+6. Update indexes.
 
 If the process is interrupted, the repository should be able to detect and clean temporary files through `repair` or `verify`.
 
-### 3.8 Verifiability
+### 3.9 Verifiability
 
 The repository must support integrity checks:
 
-- Snapshot manifests are parseable.
-- Objects referenced by manifests exist.
+- Snapshot refs are parseable and point to valid snapshot objects.
+- Snapshot objects are parseable.
+- Objects referenced by snapshot objects exist.
 - Object headers are parseable and compatible with the repository format.
 - Decompressed object content matches the logical content hash.
 - Encrypted object payloads authenticate successfully before decompression.
@@ -259,11 +299,12 @@ repository/
   config.json
   lock
   objects/
-    ab/
-      cd/
-        abcdef...
+    sha256/
+      ab/
+        cd/
+          abcdef...
   snapshots/
-    2026-05-27T01-30-00Z-<id>.json
+    2026-05-27T01-30-00Z-<id>.ref
   indexes/
     file-cache.json
     object-refcount.json
@@ -276,29 +317,30 @@ Notes:
 
 - `config.json` stores the repository version, object format version, hash algorithm, default compression profile, encryption mode, recovery record settings, and creation time.
 - `lock` prevents multiple processes from writing to the repository at the same time.
-- `objects` stores physical object envelopes keyed by logical content hash.
-- `snapshots` stores snapshot manifests.
+- `objects` stores typed physical object envelopes keyed by object ID.
+- `snapshots` stores snapshot refs that point to snapshot metadata objects.
 - `indexes` stores rebuildable indexes and must not be treated as the only source of truth.
 - `recovery` stores optional recovery record sets.
 - `tmp` stores incomplete temporary writes.
 
-Indexes can be simple in the first phase. They should be rebuildable from all snapshots when needed.
+Indexes can be simple in the first phase. They should be rebuildable from snapshot refs and objects when needed.
 
 The initial object format should be:
 
 ```text
 magic
 objectFormatVersion
+objectType
 headerLength
 header
 payload
 ```
 
-The exact binary encoding can be decided later, but the header must be small, deterministic, and independent of snapshot manifests. This allows individual object files to be verified even when indexes are missing.
+The exact binary encoding can be decided later, but the header must be small, deterministic, and independent of snapshot refs. This allows individual object files to be verified even when indexes are missing.
 
-## 5. Snapshot Manifest Draft
+## 5. Snapshot Object Draft
 
-Each snapshot manifest describes one snapshot:
+Each snapshot ref points to a snapshot object. The snapshot object payload describes one snapshot:
 
 ```json
 {
@@ -391,7 +433,7 @@ Suggested capabilities:
 
 ### 6.5 ObjectStore
 
-Writes, reads, and verifies content objects.
+Writes, reads, and verifies typed repository objects.
 
 Suggested capabilities:
 
@@ -400,7 +442,7 @@ Suggested capabilities:
 - Store an object uncompressed when compression does not reduce size enough.
 - Write and parse object headers.
 - Encrypt and decrypt object private headers and payloads when repository encryption is enabled.
-- Store whole-file objects and chunk objects through the same envelope format.
+- Store whole-file objects, chunk objects, and snapshot metadata objects through the same envelope format.
 - Write objects through temporary files.
 - Verify the logical content hash after writing.
 - Authenticate encrypted payloads before decompression.
@@ -422,15 +464,16 @@ Suggested capabilities:
 
 ### 6.7 SnapshotStore
 
-Writes, reads, lists, and verifies snapshot manifests.
+Builds snapshot manifests, stores them as typed snapshot objects, and manages snapshot refs.
 
 Suggested capabilities:
 
-- Write a new snapshot.
-- List snapshots.
-- Read a specific snapshot.
+- Write a new snapshot object.
+- Atomically write a snapshot ref.
+- List snapshot refs.
+- Read a specific snapshot through its ref.
 - Compare two snapshots.
-- Rebuild the object reference index from snapshots.
+- Rebuild the object reference index from snapshot refs and snapshot objects.
 
 ### 6.8 Restore
 
@@ -634,6 +677,8 @@ Basic test scenarios:
 - Initialize an empty repository.
 - Create a snapshot for an empty directory.
 - Create a snapshot for a directory with multiple files.
+- Verify that a snapshot ref points to a valid snapshot object.
+- Verify that a snapshot object can be read, decompressed, decrypted when needed, and parsed.
 - Modify a file and create a second snapshot.
 - Delete a file and create a third snapshot.
 - Compare two snapshots.
@@ -658,6 +703,8 @@ Basic test scenarios:
 
 - Should the default hash algorithm be `SHA-256` or `BLAKE3`?
 - Should manifests use JSON, CBOR, MessagePack, or a custom binary format?
+- What canonical encoding should be used for metadata object IDs?
+- Should very large snapshot manifests become tree-style metadata objects?
 - Which compression library and default compression level should be used?
 - What minimum size or compression ratio should decide whether an object is stored compressed or raw?
 - Which AEAD algorithm should be used for object encryption?
@@ -678,10 +725,10 @@ Basic test scenarios:
 
 ## 12. Recommended Sequence
 
-1. Define the repository format, object envelope format, encryption extension points, recovery record layout, and manifest schema.
+1. Define the repository format, typed object envelope format, snapshot ref format, encryption extension points, recovery record layout, and manifest schema.
 2. Implement `Repository` and compressed `ObjectStore`.
 3. Implement `Scanner` and file-level `Hasher`.
-4. Implement the `snapshot` write flow.
+4. Implement snapshot object writing and snapshot refs.
 5. Implement `list` and `show`.
 6. Implement `restore`.
 7. Implement `diff`.
