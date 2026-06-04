@@ -145,19 +145,19 @@ snapshot payload -> treeRef -> tree payload
 tree payload -> blobRef or chunk list -> file bytes
 ```
 
-Benefits:
+The unified object pool has the following required properties:
 
-- One object lookup path for all immutable bytes.
-- Repository-wide byte-level deduplication across whole-file blobs, chunks, and structured metadata payloads.
-- Simpler pack, sync, prune, verify, and recovery logic.
-- Cleaner encrypted repositories because public object paths do not expose semantic object classes.
-- Easier repository migration because physical storage is decoupled from metadata formats.
+- All immutable bytes use the same lookup path.
+- Whole-file blobs, chunks, and structured metadata payloads share repository-wide byte-level deduplication.
+- Pack, sync, prune, verify, recovery, and repository migration operate on object IDs without physical type partitions.
+- Public object paths do not expose semantic object classes.
 
-Costs:
+Semantic validation must happen above the object store:
 
-- Type validation must be enforced by references and payload parsers.
+- References must carry the expected semantic format when the target object is structured metadata.
+- Payload parsers must reject mismatched magic values, unsupported versions, and malformed canonical encodings.
 - Semantic verification must traverse snapshot roots and parse expected formats.
-- Type-specific maintenance requires indexes or semantic scans instead of directory partition scans.
+- Type-specific maintenance must use indexes or semantic scans instead of directory partition scans.
 
 Structured payload formats must be self-describing:
 
@@ -283,14 +283,14 @@ payload := raw-content | compressed-content
 
 Object metadata should be embedded in the object header by default, not stored as a separate sidecar file.
 
-Reasons:
+Object headers must satisfy these requirements:
 
 - Each object remains self-describing.
-- Moving or copying an object cannot accidentally lose its metadata.
-- `verify` can validate one physical file at a time.
-- Recovery records can protect complete object files without pairing data and metadata files.
-- Encryption can authenticate the object private header and payload together.
-- Pruning does not need to reason about partially missing sidecar files.
+- Moving or copying an object must preserve the metadata needed to verify it.
+- `verify` must be able to validate one physical file at a time.
+- Recovery records must protect complete object files without pairing data and metadata files.
+- Encryption must authenticate the object private header and payload together.
+- Pruning must not need to reason about partially missing sidecar files.
 
 Sidecar metadata would make raw payload files easier to represent, but it would double the number of repository files, complicate atomic writes, and make object repair and garbage collection more fragile.
 
