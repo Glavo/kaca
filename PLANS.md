@@ -117,7 +117,7 @@ Recovery records should protect the physical repository bytes, not the logical f
 The recovery layer should operate after compression and encryption:
 
 ```text
-object-envelope files + snapshot ref files + config files -> recovery record set
+object-envelope files + snapshot record files + config files -> recovery record set
 ```
 
 This allows recovery tools to repair corrupted encrypted objects without needing the encryption key.
@@ -229,21 +229,29 @@ The first implementation may keep chunk objects as loose object files. A later p
 
 Snapshot contents should be committed as typed metadata objects in the same repository object store used by file and chunk objects.
 
-The `snapshots` directory should store refs, not full manifest bodies:
+The `snapshots` directory should store mutable snapshot records, not full manifest bodies:
 
 ```text
 snapshots/
-  2026-05-27T01-30-00Z-<snapshot-id>.ref
+  2026-05-27T01-30-00Z-<snapshot-id>.json
 ```
 
-A snapshot ref points to the actual snapshot object:
+A snapshot record points to the actual immutable snapshot object and may also contain user-editable metadata:
 
 ```json
 {
   "formatVersion": 1,
   "snapshotId": "sha256:...",
   "createdAt": "2026-05-27T01:30:00Z",
-  "object": "sha256:..."
+  "object": "sha256:...",
+  "updatedAt": "2026-05-27T02:00:00Z",
+  "title": "Before dependency upgrade",
+  "notes": "User-editable notes.",
+  "tags": ["manual", "important"],
+  "pinned": true,
+  "retention": {
+    "keep": true
+  }
 }
 ```
 
@@ -256,9 +264,29 @@ The snapshot object payload contains the snapshot manifest. This gives snapshot 
 - Atomic object writes.
 - Uniform object reachability for `prune`.
 
-Snapshot refs remain necessary because content-addressed objects alone are not discoverable roots. `prune` should treat snapshot refs as reachability roots, then walk snapshot objects and their referenced data objects.
+Mutable snapshot records remain necessary because content-addressed objects alone are not discoverable roots. `prune` should treat snapshot records as reachability roots, then walk snapshot objects and their referenced data objects.
 
-The initial implementation can store one snapshot manifest as one snapshot object. A later tree-style metadata model can split very large manifests into reusable directory metadata objects without changing the snapshot ref model.
+Only non-critical user metadata should be mutable. Restore-critical information must stay in the immutable snapshot object:
+
+- Source identity.
+- Parent snapshot object ID.
+- File tree entries.
+- Object references.
+- Chunk lists.
+- Required restore metadata.
+
+Mutable records may include:
+
+- User title.
+- Notes.
+- Tags.
+- Pin or favorite state.
+- Retention hints.
+- Last viewed or UI state.
+
+Updating mutable metadata must not create a new snapshot object and must not change the snapshot object ID.
+
+The initial implementation can store one snapshot manifest as one snapshot object. A later tree-style metadata model can split very large manifests into reusable directory metadata objects without changing the snapshot record model.
 
 ### 3.8 Atomic Writes
 
@@ -270,7 +298,7 @@ Recommended write order:
 2. Write the snapshot manifest as a temporary snapshot object.
 3. Verify that all objects referenced by the snapshot object exist.
 4. Atomically move the snapshot object into the object store.
-5. Atomically write the snapshot ref.
+5. Atomically write the mutable snapshot record.
 6. Update indexes.
 
 If the process is interrupted, the repository should be able to detect and clean temporary files through `repair` or `verify`.
@@ -279,7 +307,7 @@ If the process is interrupted, the repository should be able to detect and clean
 
 The repository must support integrity checks:
 
-- Snapshot refs are parseable and point to valid snapshot objects.
+- Snapshot records are parseable and point to valid snapshot objects.
 - Snapshot objects are parseable.
 - Objects referenced by snapshot objects exist.
 - Object headers are parseable and compatible with the repository format.
@@ -304,7 +332,7 @@ repository/
         cd/
           abcdef...
   snapshots/
-    2026-05-27T01-30-00Z-<id>.ref
+    2026-05-27T01-30-00Z-<id>.json
   indexes/
     file-cache.json
     object-refcount.json
@@ -318,12 +346,12 @@ Notes:
 - `config.json` stores the repository version, object format version, hash algorithm, default compression profile, encryption mode, recovery record settings, and creation time.
 - `lock` prevents multiple processes from writing to the repository at the same time.
 - `objects` stores typed physical object envelopes keyed by object ID.
-- `snapshots` stores snapshot refs that point to snapshot metadata objects.
+- `snapshots` stores mutable snapshot records that point to immutable snapshot metadata objects.
 - `indexes` stores rebuildable indexes and must not be treated as the only source of truth.
 - `recovery` stores optional recovery record sets.
 - `tmp` stores incomplete temporary writes.
 
-Indexes can be simple in the first phase. They should be rebuildable from snapshot refs and objects when needed.
+Indexes can be simple in the first phase. They should be rebuildable from snapshot records and objects when needed.
 
 The initial object format should be:
 
@@ -336,11 +364,11 @@ header
 payload
 ```
 
-The exact binary encoding can be decided later, but the header must be small, deterministic, and independent of snapshot refs. This allows individual object files to be verified even when indexes are missing.
+The exact binary encoding can be decided later, but the header must be small, deterministic, and independent of snapshot records. This allows individual object files to be verified even when indexes are missing.
 
 ## 5. Snapshot Object Draft
 
-Each snapshot ref points to a snapshot object. The snapshot object payload describes one snapshot:
+Each mutable snapshot record points to a snapshot object. The snapshot object payload describes one immutable snapshot:
 
 ```json
 {
@@ -464,16 +492,17 @@ Suggested capabilities:
 
 ### 6.7 SnapshotStore
 
-Builds snapshot manifests, stores them as typed snapshot objects, and manages snapshot refs.
+Builds snapshot manifests, stores them as typed snapshot objects, and manages mutable snapshot records.
 
 Suggested capabilities:
 
 - Write a new snapshot object.
-- Atomically write a snapshot ref.
-- List snapshot refs.
-- Read a specific snapshot through its ref.
+- Atomically write a snapshot record.
+- Update mutable snapshot metadata without rewriting the snapshot object.
+- List snapshot records.
+- Read a specific snapshot through its record.
 - Compare two snapshots.
-- Rebuild the object reference index from snapshot refs and snapshot objects.
+- Rebuild the object reference index from snapshot records and snapshot objects.
 
 ### 6.8 Restore
 
@@ -670,6 +699,18 @@ Safe strategy:
 - Allow reading old chunker profiles indefinitely.
 - Treat changes to default chunker parameters as an explicit repository configuration change.
 
+### 9.8 Mutable Snapshot Record Loss
+
+Mutable snapshot records are reachability roots. If a record is deleted or corrupted, the immutable snapshot object may still exist in the object store but become undiscoverable during normal listing.
+
+Safe strategy:
+
+- Protect snapshot record files with recovery records.
+- Update snapshot records atomically.
+- Keep mutable metadata separate from restore-critical snapshot object content.
+- Make `verify` report orphan snapshot objects.
+- Let `repair` rebuild a minimal snapshot record by scanning typed snapshot objects when possible.
+
 ## 10. Test Plan
 
 Basic test scenarios:
@@ -677,8 +718,10 @@ Basic test scenarios:
 - Initialize an empty repository.
 - Create a snapshot for an empty directory.
 - Create a snapshot for a directory with multiple files.
-- Verify that a snapshot ref points to a valid snapshot object.
+- Verify that a snapshot record points to a valid snapshot object.
 - Verify that a snapshot object can be read, decompressed, decrypted when needed, and parsed.
+- Update snapshot notes or tags and verify that the snapshot object ID does not change.
+- Delete a snapshot record and verify that the snapshot object is reported as an orphan.
 - Modify a file and create a second snapshot.
 - Delete a file and create a third snapshot.
 - Compare two snapshots.
@@ -709,6 +752,7 @@ Basic test scenarios:
 - What minimum size or compression ratio should decide whether an object is stored compressed or raw?
 - Which AEAD algorithm should be used for object encryption?
 - Should encrypted repositories always encrypt snapshot manifests?
+- Should mutable snapshot records be encrypted in encrypted repositories?
 - How should password-based key derivation be configured?
 - Should recovery records use an external PAR2 implementation or an internal Reed-Solomon implementation?
 - What is the default redundancy percentage for recovery records?
@@ -725,10 +769,10 @@ Basic test scenarios:
 
 ## 12. Recommended Sequence
 
-1. Define the repository format, typed object envelope format, snapshot ref format, encryption extension points, recovery record layout, and manifest schema.
+1. Define the repository format, typed object envelope format, mutable snapshot record format, encryption extension points, recovery record layout, and manifest schema.
 2. Implement `Repository` and compressed `ObjectStore`.
 3. Implement `Scanner` and file-level `Hasher`.
-4. Implement snapshot object writing and snapshot refs.
+4. Implement snapshot object writing and mutable snapshot records.
 5. Implement `list` and `show`.
 6. Implement `restore`.
 7. Implement `diff`.
