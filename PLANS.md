@@ -53,7 +53,15 @@ File content is stored in the object store by content hash. If multiple snapshot
 
 The object identity is based on the logical uncompressed content. Physical object files may be compressed, but deduplication should still be based on the original content bytes.
 
-Metadata objects, such as snapshot manifests, should also use the object store, but their IDs must be domain-separated from file content objects. A snapshot object ID should be computed from its canonical typed metadata body, not from file content bytes.
+Metadata objects, such as snapshot manifests, should also use the same object store. The object pool is unified, but object IDs must be type-domain-separated. A snapshot object ID should be computed from its canonical typed metadata body, not from file content bytes alone.
+
+This is similar to Git's object model: blobs, trees, commits, and tags share one object database, but the object type is part of the hashed representation. The goal is not separate storage namespaces; the goal is preventing type confusion while keeping unified addressing.
+
+Conceptually:
+
+```text
+objectId = hash("kaca-object-v1" || objectType || canonicalLogicalBytes)
+```
 
 The baseline object model supports file-level deduplication:
 
@@ -115,7 +123,7 @@ objects/
         abcdef...
 ```
 
-For data objects, the object ID should be derived from the logical content hash. For metadata objects, the object ID should be derived from a canonical typed metadata encoding. This keeps deduplication and metadata integrity stable even as the physical storage format evolves.
+For data objects, the object ID should be derived from a typed logical content hash. For metadata objects, the object ID should be derived from a canonical typed metadata encoding. This keeps deduplication and metadata integrity stable even as the physical storage format evolves.
 
 ### 3.4 Optional Encryption
 
