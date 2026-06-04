@@ -70,7 +70,7 @@ Recommended distinction:
 ```text
 contentHash = hash(canonicalLogicalBytes)
 objectId = hash("kaca-object-v1" || objectType || canonicalLogicalBytes)
-objectKey = hashAlgorithm + objectType + logicalSize + objectId
+objectKey = objectType + logicalSize + objectId
 ```
 
 Using a bare hash as the only object ID is acceptable only in a store that contains one semantic object class. A unified object pool containing file data, chunks, snapshot metadata, tree metadata, and other typed objects should use typed object IDs or an equivalent typed composite key.
@@ -84,25 +84,21 @@ Recommended physical layout:
 ```text
 objects/
   data/
-    sha256/
-      ab/
-        cd/
-          <object-id>
+    ab/
+      cd/
+        <object-id>
   chunk/
-    sha256/
-      ab/
-        cd/
-          <object-id>
+    ab/
+      cd/
+        <object-id>
   snapshot/
-    sha256/
-      ab/
-        cd/
-          <object-id>
+    ab/
+      cd/
+        <object-id>
   tree/
-    sha256/
-      ab/
-        cd/
-          <object-id>
+    ab/
+      cd/
+        <object-id>
 ```
 
 This is different from fully independent object pools. The object store remains one subsystem with shared rules for object envelopes, verification, synchronization, recovery records, and pruning.
@@ -130,7 +126,7 @@ Hash collisions are not expected with modern cryptographic hashes, but the repos
 Rules:
 
 - Use only cryptographic hashes for object identity.
-- Record the hash algorithm in repository config and object metadata.
+- Record the hash algorithm in repository config.
 - Include object type and format domain separation in the hashed representation.
 - Store logical content size and object type in the object header.
 - Treat object equality as a composite logical identity, not as a bare hash string.
@@ -141,7 +137,7 @@ Rules:
 The logical object identity should be:
 
 ```text
-objectKey = hashAlgorithm + objectType + logicalSize + objectId
+objectKey = objectType + logicalSize + objectId
 ```
 
 Two objects are the same logical object only when all parts of `objectKey` match. If any part differs, they are different objects.
@@ -160,7 +156,8 @@ For same-type, same-size collision concerns, use a stronger hash, a secondary ha
 
 When adding an object whose ID already exists:
 
-- Check that object type, logical size, and hash algorithm match.
+- Check that object type and logical size match.
+- Check that the repository hash algorithm is compatible with the object ID.
 - In normal mode, trust the cryptographic object ID after header validation.
 - In high-assurance mode, read the existing object and compare logical bytes before reusing it.
 
@@ -207,7 +204,6 @@ The object header should be minimal and versioned. In an unencrypted repository,
 
 - Object format version.
 - Object type.
-- Content hash algorithm.
 - Logical content hash.
 - Logical content size.
 - Payload compression algorithm.
@@ -225,7 +221,7 @@ The object path should be derived from the object ID:
 
 ```text
 objects/
-  sha256/
+  data/
     ab/
       cd/
         abcdef...
@@ -395,7 +391,7 @@ The file-level manifest should preserve the complete logical file identity and t
     },
     "chunks": [
       {
-        "id": "sha256:...",
+        "id": "abcdef...",
         "offset": 0,
         "contentSize": 4194304,
         "storedSize": 2097152,
@@ -452,9 +448,9 @@ A snapshot record points to the actual immutable snapshot object and may also co
 ```json
 {
   "formatVersion": 1,
-  "snapshotId": "sha256:...",
+  "snapshotId": "abcdef...",
   "createdAt": "2026-05-27T01:30:00Z",
-  "object": "sha256:...",
+  "object": "abcdef...",
   "updatedAt": "2026-05-27T02:00:00Z",
   "title": "Before dependency upgrade",
   "notes": "User-editable notes.",
@@ -594,16 +590,15 @@ repository/
   lock
   objects/
     data/
-      sha256/
-        ab/
-          cd/
-            abcdef...
+      ab/
+        cd/
+          abcdef...
     chunk/
-      sha256/
+      ab/
     snapshot/
-      sha256/
+      ab/
     tree/
-      sha256/
+      ab/
   snapshots/
     2026-05-27T01-30-00Z-<id>.json
   indexes/
@@ -661,7 +656,7 @@ The example below is JSON for readability. The stored snapshot object should use
       "size": 1024,
       "modifiedAt": "2026-05-27T01:00:00Z",
       "object": {
-        "id": "sha256:...",
+        "id": "abcdef...",
         "contentSize": 1024,
         "storedSize": 512,
         "compression": "zstd",
@@ -718,7 +713,7 @@ Computes file hashes.
 Suggested capabilities:
 
 - Stream-based hashing.
-- Future hash algorithm switching.
+- Repository-level hash algorithm implementation.
 - Progress reporting for large files.
 - Reserved interfaces for chunk hashing.
 
@@ -1052,7 +1047,7 @@ Basic test scenarios:
 - Restore with include and exclude patterns.
 - Verify that duplicate files store only one object.
 - Verify that object scanning covers every typed object partition.
-- Verify that existing-object reuse checks object type, logical size, and hash algorithm.
+- Verify that existing-object reuse checks object type, logical size, and repository hash compatibility.
 - Verify that bare matching hashes are not enough when type or logical size differs.
 - Verify that high-assurance mode compares logical bytes before reusing an existing object.
 - Verify that compressed objects restore to the original content.
