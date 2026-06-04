@@ -52,6 +52,7 @@ Repository metadata and user-editable configuration are separate files.
 - Object format version.
 - Metadata encoding.
 - Hash algorithm.
+- Canonical compression profile.
 - Object layout.
 - Encryption mode.
 - Public encryption and key derivation parameters.
@@ -60,7 +61,6 @@ Repository metadata and user-editable configuration are separate files.
 `config.toml` is user-editable configuration. It stores operational preferences:
 
 - Remotes.
-- Default compression profile.
 - Recovery record defaults.
 - Retention defaults.
 - Scheduling preferences.
@@ -334,6 +334,16 @@ The recommended encrypted repository model is:
 - Use AEAD encryption for object payloads and encrypted private headers.
 - Use random nonces for physical encryption.
 - Use keyed object IDs, such as `HMAC(content-id-key, logical-content-hash)`, so deduplication still works inside the repository without exposing raw plaintext hashes in file names.
+
+Compression still happens before encryption. Encrypted bytes are not compressible in a useful way.
+
+To avoid multiple physical representations for the same logical object, the compression profile is part of the repository storage format:
+
+- Store the canonical compression profile in `repository.meta`.
+- Use deterministic compression settings for object payloads.
+- Do not let `config.toml` change the compression profile of an existing repository.
+- If the compression profile changes, treat it as a repository migration or repack operation.
+- When an object already exists, reuse its existing physical representation instead of creating another compressed representation.
 
 Encrypted object identity is computed before compression and encryption:
 
@@ -723,8 +733,8 @@ repository/
 
 Notes:
 
-- `repository.meta` stores binary internal metadata such as repository ID, repository format version, object format version, hash algorithm, metadata encoding, object layout, encryption mode, key derivation public parameters, and creation time.
-- `config.toml` stores user-editable configuration such as remotes, default compression profile, recovery record defaults, retention defaults, scheduling preferences, and UI or service settings.
+- `repository.meta` stores binary internal metadata such as repository ID, repository format version, object format version, hash algorithm, metadata encoding, canonical compression profile, object layout, encryption mode, key derivation public parameters, and creation time.
+- `config.toml` stores user-editable configuration such as remotes, recovery record defaults, retention defaults, scheduling preferences, and UI or service settings.
 - `lock` prevents multiple processes from writing to the repository at the same time.
 - `objects` stores typed physical object envelopes in type partitions keyed by object ID.
 - `packs` stores immutable packed object files and pack indexes.
