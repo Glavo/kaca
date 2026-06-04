@@ -312,6 +312,23 @@ The recommended encrypted repository model is:
 - Use random nonces for physical encryption.
 - Use keyed object IDs, such as `HMAC(content-id-key, logical-content-hash)`, so deduplication still works inside the repository without exposing raw plaintext hashes in file names.
 
+Encrypted object identity is computed before compression and encryption:
+
+```text
+canonicalLogicalBytes
+  -> contentHash = hash(canonicalLogicalBytes)
+  -> objectId = HMAC(object-id-key, objectType || logicalSize || contentHash)
+  -> compress canonicalLogicalBytes
+  -> encrypt compressed payload
+  -> object envelope
+```
+
+`objectId` is a logical identity. It must not be computed from ciphertext, because ciphertext changes with encryption nonce and would break deduplication.
+
+A separate physical checksum may be computed over the encrypted object envelope for transfer validation or recovery diagnostics, but that checksum is not the object identity.
+
+Encrypted repositories should not expose raw plaintext `contentHash` values in public object paths or public headers. Raw content hashes may be stored inside encrypted private headers when needed for high-assurance verification.
+
 Encryption should be repository-wide once enabled. Mixing encrypted and unencrypted snapshots in the same repository should be avoided unless there is a strong migration use case.
 
 Manifest encryption needs a separate decision. Encrypting only object payloads still leaks paths, file sizes, timestamps, and directory structure through snapshot manifests. A privacy-focused encrypted repository should encrypt snapshot manifests as well.
@@ -1141,6 +1158,8 @@ Basic test scenarios:
 - Pack loose objects and verify that packed objects restore correctly.
 - Repack live objects during pruning without losing references.
 - Verify encrypted objects authenticate, decrypt, decompress, and restore to the original content.
+- Verify that encrypted object IDs are stable for the same logical plaintext even when encryption nonces differ.
+- Verify that encrypted object IDs do not expose raw plaintext content hashes.
 - Verify that wrong keys fail before decompression or restore.
 - Verify that recovery records detect physical file corruption.
 - Verify that recovery records can repair a damaged protected file when enough redundancy is available.
