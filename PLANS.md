@@ -55,7 +55,7 @@ The object identity is based on the logical uncompressed content. Physical objec
 
 Metadata objects, such as snapshot manifests, should also use the same object store. The object pool is unified, but object IDs must be type-domain-separated. A snapshot object ID should be computed from its canonical typed metadata body, not from file content bytes alone.
 
-This is similar to Git's object model: blobs, trees, commits, and tags share one object database, but the object type is part of the hashed representation. The goal is not separate storage namespaces; the goal is preventing type confusion while keeping unified addressing.
+The object type is part of the hashed representation. The goal is not separate storage namespaces; the goal is preventing type confusion while keeping unified addressing.
 
 Conceptually:
 
@@ -106,11 +106,6 @@ Object paths use fixed one-level fanout:
 ```text
 objects/<object-type>/<first-two-hex>/<full-object-id>
 ```
-
-Common patterns:
-
-- One-level fanout is simple and used by systems such as Git loose objects. Git stores the remaining hash in the file name; this repository keeps the complete object ID as the file name for easier inspection and validation.
-- Pack- or segment-based repositories reduce the need for deep fanout because many logical objects are stored inside larger physical files.
 
 The path builder should be centralized, but fanout is part of the repository format rather than a user-configurable setting.
 

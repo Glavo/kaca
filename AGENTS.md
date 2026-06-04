@@ -37,6 +37,7 @@ These rules apply to all Java code written or modified in this repository.
 - Keep documentation accurate and specific to the actual behavior, constraints, and side effects.
 - Add concise implementation comments inside complex logic whenever they materially improve readability or explain non-obvious behavior.
 - Project documentation must describe architecture decisions, technical rationale, and implementation behavior directly. Do not include wording that refers to user prompts, conversation context, planning negotiations, or why a topic was raised in discussion.
+- When updating project documentation from a discussion, convert conclusions into direct requirements or design decisions. Do not copy explanatory comparison text from the conversation, such as "common patterns", "other systems usually do this", or "this repository chooses this because we discussed it", unless the document intentionally contains a sourced survey section.
 
 ## Gradle
 
