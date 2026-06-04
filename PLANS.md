@@ -87,16 +87,16 @@ Recommended physical layout:
 objects/
   data/
     ab/
-      <object-id>
+      <full-object-id>
   chunk/
     ab/
-      <object-id>
+      <full-object-id>
   snapshot/
     ab/
-      <object-id>
+      <full-object-id>
   tree/
     ab/
-      <object-id>
+      <full-object-id>
 ```
 
 The object file name is the complete object ID. The fanout directory repeats the first two hex characters for directory distribution.
@@ -283,8 +283,7 @@ The object path should be derived from the object ID:
 objects/
   data/
     ab/
-      cd/
-        abcdef...
+      abcdef...
 ```
 
 For data objects, the object ID should be derived from a typed logical content hash. For metadata objects, the object ID should be derived from a canonical typed metadata encoding. This keeps deduplication and metadata integrity stable even as the physical storage format evolves.
@@ -671,10 +670,13 @@ repository/
         abcdef...
     chunk/
       ab/
+        abcdef...
     snapshot/
       ab/
+        abcdef...
     tree/
       ab/
+        abcdef...
   packs/
     data/
     chunk/
