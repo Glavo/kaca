@@ -12,6 +12,7 @@ This document records the initial architecture plan for `kaca`, an incremental b
 - Use compressed object storage as part of the initial repository format.
 - Treat optional encryption and recovery records as first-class architecture concerns.
 - Reserve a manifest model for chunked large objects.
+- Support sparse restore and leave room for long-lived sparse checkout worktrees.
 - Leave room for future remote repositories, chunk-level deduplication, and scheduled jobs.
 
 ## 2. Non-Goals
@@ -22,6 +23,7 @@ The first phase should not target these capabilities:
 - Cloud sync or remote repositories.
 - Filesystem-level consistency snapshots such as Windows VSS, btrfs, zfs, or lvm.
 - Chunk-level deduplication.
+- Long-lived sparse checkout state.
 - Multiple clients writing to the same repository concurrently.
 - Complex schedulers or background services.
 
@@ -62,6 +64,19 @@ object-file := object-header + payload
 payload := raw-content | compressed-content
 ```
 
+Object metadata should be embedded in the object header by default, not stored as a separate sidecar file.
+
+Reasons:
+
+- Each object remains self-describing.
+- Moving or copying an object cannot accidentally lose its metadata.
+- `verify` can validate one physical file at a time.
+- Recovery records can protect complete object files without pairing data and metadata files.
+- Encryption can authenticate the object private header and payload together.
+- Pruning does not need to reason about partially missing sidecar files.
+
+Sidecar metadata would make raw payload files easier to represent, but it would double the number of repository files, complicate atomic writes, and make object repair and garbage collection more fragile.
+
 The object header should be minimal and versioned. In an unencrypted repository, it should identify:
 
 - Object format version.
@@ -75,6 +90,10 @@ The object header should be minimal and versioned. In an unencrypted repository,
 In an encrypted repository, public headers must not expose logical content hashes or other plaintext-derived metadata unless the selected encryption mode explicitly allows that leakage. The object format should support a public header plus an encrypted private header.
 
 The payload may be stored uncompressed when compression is disabled for that object or when compression does not reduce size enough. The header must explicitly record that decision.
+
+The repository should not hard link mutable source files directly into the object store. A hard link shares the same underlying file data; if the original file is modified in place later, the backup object would change as well. That violates snapshot immutability.
+
+Future copy optimizations should prefer safe copy-on-write clone mechanisms, such as reflink or platform block cloning, when available. Any optimized copy path must still verify the resulting object before making it reachable.
 
 The object path should be derived from the object ID:
 
@@ -288,7 +307,45 @@ Updating mutable metadata must not create a new snapshot object and must not cha
 
 The initial implementation can store one snapshot manifest as one snapshot object. A later tree-style metadata model can split very large manifests into reusable directory metadata objects without changing the snapshot record model.
 
-### 3.8 Atomic Writes
+### 3.8 Sparse Restore and Checkout
+
+The snapshot model should support sparse restore: restoring only selected paths or path patterns from a snapshot.
+
+MVP sparse behavior can be implemented by loading the snapshot manifest and filtering entries:
+
+```text
+kaca restore <snapshot-id> <target> --path docs/readme.md
+kaca restore <snapshot-id> <target> --include "src/**" --exclude "build/**"
+```
+
+This is enough for correctness but may be inefficient for very large snapshots because the whole manifest must be read.
+
+Efficient long-term sparse checkout needs tree-style metadata objects:
+
+```text
+snapshot object -> root tree object -> directory tree objects -> file object references
+```
+
+With tree objects, a restore operation for `src/main/**` only needs to load the relevant metadata branches and referenced data objects.
+
+Long-lived sparse checkout should be treated as a separate feature from one-shot sparse restore. A checkout worktree may need mutable local state:
+
+```text
+.kaca-checkout.json
+```
+
+Possible future commands:
+
+```text
+kaca checkout <snapshot-id> <target> --sparse <spec>
+kaca checkout add <path>
+kaca checkout remove <path>
+kaca checkout list
+```
+
+Sparse checkout state must not become a repository reachability root unless the user explicitly pins the snapshot. Otherwise, a local checkout could accidentally prevent expected pruning.
+
+### 3.9 Atomic Writes
 
 Snapshot creation must not leave behind a half-successful snapshot.
 
@@ -303,7 +360,7 @@ Recommended write order:
 
 If the process is interrupted, the repository should be able to detect and clean temporary files through `repair` or `verify`.
 
-### 3.9 Verifiability
+### 3.10 Verifiability
 
 The repository must support integrity checks:
 
@@ -314,6 +371,7 @@ The repository must support integrity checks:
 - Decompressed object content matches the logical content hash.
 - Encrypted object payloads authenticate successfully before decompression.
 - Chunked files restore to the expected file-level content hash.
+- Sparse restore outputs only the selected paths and preserves their metadata.
 - Recovery records match the physical repository files they protect.
 - Indexes can be rebuilt from snapshots and objects.
 - Deleting old snapshots does not delete objects that are still referenced.
@@ -512,6 +570,7 @@ Suggested capabilities:
 
 - Restore a complete snapshot.
 - Restore a single path.
+- Restore selected paths by include and exclude patterns.
 - Detect target path conflicts.
 - Support dry run.
 - Restore timestamps and basic permissions.
@@ -566,6 +625,8 @@ kaca list --repo <repository>
 kaca show <snapshot-id> --repo <repository>
 kaca diff <from-snapshot-id> <to-snapshot-id> --repo <repository>
 kaca restore <snapshot-id> <target> --repo <repository>
+kaca restore <snapshot-id> <target> --repo <repository> --path <path>
+kaca restore <snapshot-id> <target> --repo <repository> --include <pattern> --exclude <pattern>
 kaca verify --repo <repository>
 kaca prune --repo <repository> --keep-daily 7 --keep-weekly 4
 ```
@@ -580,6 +641,10 @@ kaca recovery create --repo <repository> --redundancy 10
 kaca recovery create --repo <repository> --redundancy 10 --output <recovery-directory>
 kaca recovery verify --repo <repository>
 kaca recovery repair --repo <repository>
+kaca checkout <snapshot-id> <target> --repo <repository> --sparse <spec>
+kaca checkout add <path>
+kaca checkout remove <path>
+kaca checkout list
 kaca mount <snapshot-id> --repo <repository>
 kaca serve --repo <repository>
 ```
@@ -600,6 +665,7 @@ The first useful version should include:
 - `list`.
 - `diff`.
 - `restore`.
+- Sparse restore for selected paths.
 - `verify`.
 - Basic exclude rules.
 - Atomic writes.
@@ -711,6 +777,18 @@ Safe strategy:
 - Make `verify` report orphan snapshot objects.
 - Let `repair` rebuild a minimal snapshot record by scanning typed snapshot objects when possible.
 
+### 9.9 Unsafe Hard Link Imports
+
+Hard linking source files into the repository can corrupt backups because hard links share mutable file data.
+
+Safe strategy:
+
+- Do not hard link mutable source files into `objects`.
+- Treat hard links as filesystem metadata to record and restore, not as a repository copy optimization.
+- Prefer verified normal copies for the initial implementation.
+- Consider reflink or platform copy-on-write clone support later.
+- Verify object content before making any optimized copy reachable.
+
 ## 10. Test Plan
 
 Basic test scenarios:
@@ -727,9 +805,12 @@ Basic test scenarios:
 - Compare two snapshots.
 - Restore a complete snapshot.
 - Restore a single file.
+- Restore only selected paths and verify that unrelated paths are not materialized.
+- Restore with include and exclude patterns.
 - Verify that duplicate files store only one object.
 - Verify that compressed objects restore to the original content.
 - Verify that object headers and payloads are checked by `verify`.
+- Verify that objects remain self-describing without sidecar metadata files.
 - Verify encrypted objects authenticate, decrypt, decompress, and restore to the original content.
 - Verify that wrong keys fail before decompression or restore.
 - Verify that recovery records detect physical file corruption.
@@ -750,6 +831,7 @@ Basic test scenarios:
 - Should very large snapshot manifests become tree-style metadata objects?
 - Which compression library and default compression level should be used?
 - What minimum size or compression ratio should decide whether an object is stored compressed or raw?
+- Should future platforms support reflink or copy-on-write clone optimization for raw object payloads?
 - Which AEAD algorithm should be used for object encryption?
 - Should encrypted repositories always encrypt snapshot manifests?
 - Should mutable snapshot records be encrypted in encrypted repositories?
@@ -761,6 +843,8 @@ Basic test scenarios:
 - Should large file chunking use fixed-size chunks or rolling hash?
 - What large-file threshold should enable chunking by default?
 - Should loose chunk objects be packed after snapshot creation?
+- What pattern syntax should sparse restore use?
+- Should long-lived sparse checkout state be stored in the target directory or in the repository?
 - Is a database index such as SQLite needed?
 - Should Windows ACLs and Unix permissions be included in the first version?
 - Should exclude rules be compatible with `.gitignore` syntax?
@@ -774,7 +858,7 @@ Basic test scenarios:
 3. Implement `Scanner` and file-level `Hasher`.
 4. Implement snapshot object writing and mutable snapshot records.
 5. Implement `list` and `show`.
-6. Implement `restore`.
+6. Implement `restore`, including sparse restore.
 7. Implement `diff`.
 8. Implement `verify`.
 9. Add tests for crash recovery and integrity scenarios.
