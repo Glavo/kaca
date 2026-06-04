@@ -333,7 +333,23 @@ The recommended encrypted repository model is:
 - Derive separate subkeys for object IDs, object encryption, manifest encryption, and metadata authentication.
 - Use AEAD encryption for object payloads and encrypted private headers.
 - Use random nonces for physical encryption.
-- Use keyed object IDs, such as `HMAC(content-id-key, logical-content-hash)`, so deduplication still works inside the repository without exposing raw plaintext hashes in file names.
+- Use keyed object IDs, such as `HMAC(object-id-key, logical-content-hash)`, so deduplication still works inside the repository without exposing raw plaintext hashes in file names.
+
+Object ID privacy requires a secret, not a public salt. A public salt does not prevent dictionary checks because an attacker can recompute salted hashes for guessed content.
+
+The repository should store encrypted key material in `repository.meta`. After unlock, the key hierarchy derives an `object-id-key` used only for object identity:
+
+```text
+object-id-key = KDF(repository-master-key, "object-id")
+objectId = HMAC(object-id-key, objectType || logicalSize || contentHash)
+```
+
+Do not implement object ID privacy as `hash(content || salt)` or `hash(salt || content)`. Use HMAC or a standard keyed hash mode, such as keyed BLAKE3, to avoid construction and length-extension pitfalls.
+
+The public password KDF salt and the secret object ID key have different purposes:
+
+- Public KDF salt makes password-derived keys unique.
+- Secret object ID key prevents plaintext hash disclosure and known-content probing.
 
 Compression still happens before encryption. Encrypted bytes are not compressible in a useful way.
 
@@ -1198,6 +1214,7 @@ Basic test scenarios:
 - Verify encrypted objects authenticate, decrypt, decompress, and restore to the original content.
 - Verify that encrypted object IDs are stable for the same logical plaintext even when encryption nonces differ.
 - Verify that encrypted object IDs do not expose raw plaintext content hashes.
+- Verify that encrypted repositories use keyed object IDs rather than public salted hashes.
 - Verify that wrong keys fail before decompression or restore.
 - Verify that recovery records detect physical file corruption.
 - Verify that recovery records can repair a damaged protected file when enough redundancy is available.
