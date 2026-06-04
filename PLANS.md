@@ -307,6 +307,22 @@ Updating mutable metadata must not create a new snapshot object and must not cha
 
 The initial implementation can store one snapshot manifest as one snapshot object. A later tree-style metadata model can split very large manifests into reusable directory metadata objects without changing the snapshot record model.
 
+Snapshot object payloads should not use plain JSON as the long-term storage format. JSON examples in this document are schema illustrations only.
+
+The immutable metadata stored in the object pool should use a canonical binary encoding:
+
+- Deterministic field ordering.
+- No duplicate keys.
+- Normalized path strings.
+- Explicit integer timestamp representation.
+- Stable enum values for entry types.
+- No floating point values.
+- A format version inside every metadata object.
+
+The object ID for a metadata object should be computed from the canonical uncompressed metadata bytes before compression and encryption.
+
+Mutable snapshot records outside the object pool may use JSON because they are user-editable catalog data, not content-addressed immutable metadata.
+
 ### 3.8 Sparse Restore and Checkout
 
 The snapshot model should support sparse restore: restoring only selected paths or path patterns from a snapshot.
@@ -427,6 +443,8 @@ The exact binary encoding can be decided later, but the header must be small, de
 ## 5. Snapshot Object Draft
 
 Each mutable snapshot record points to a snapshot object. The snapshot object payload describes one immutable snapshot:
+
+The example below is JSON for readability. The stored snapshot object should use a canonical binary metadata encoding.
 
 ```json
 {
@@ -826,7 +844,7 @@ Basic test scenarios:
 ## 11. Open Research Questions
 
 - Should the default hash algorithm be `SHA-256` or `BLAKE3`?
-- Should manifests use JSON, CBOR, MessagePack, or a custom binary format?
+- Should immutable metadata use canonical CBOR, deterministic Protocol Buffers, or a custom binary format?
 - What canonical encoding should be used for metadata object IDs?
 - Should very large snapshot manifests become tree-style metadata objects?
 - Which compression library and default compression level should be used?
