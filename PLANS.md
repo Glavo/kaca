@@ -63,6 +63,66 @@ Conceptually:
 objectId = hash("kaca-object-v1" || objectType || canonicalLogicalBytes)
 ```
 
+A bare hash of logical bytes may still be recorded as `contentHash`, especially for data objects. However, `contentHash` is a content digest, not the universal identity of an object in the unified object pool.
+
+Recommended distinction:
+
+```text
+contentHash = hash(canonicalLogicalBytes)
+objectId = hash("kaca-object-v1" || objectType || canonicalLogicalBytes)
+objectKey = hashAlgorithm + objectType + logicalSize + objectId
+```
+
+Using a bare hash as the only object ID is acceptable only in a store that contains one semantic object class. A unified object pool containing file data, chunks, snapshot metadata, tree metadata, and other typed objects should use typed object IDs or an equivalent typed composite key.
+
+#### Object Pool Partitioning
+
+The repository should expose one logical `ObjectStore` API, but the physical layout may partition objects by type.
+
+Recommended physical layout:
+
+```text
+objects/
+  data/
+    sha256/
+      ab/
+        cd/
+          <object-id>
+  chunk/
+    sha256/
+      ab/
+        cd/
+          <object-id>
+  snapshot/
+    sha256/
+      ab/
+        cd/
+          <object-id>
+  tree/
+    sha256/
+      ab/
+        cd/
+          <object-id>
+```
+
+This is different from fully independent object pools. The object store remains one subsystem with shared rules for object envelopes, verification, synchronization, recovery records, and pruning.
+
+Benefits:
+
+- Easier type-specific scanning.
+- Lower risk of accidental type confusion.
+- Different object types can use different packing strategies.
+- Snapshot and tree metadata can be managed separately from large data blobs.
+- Remote sync can transfer selected object classes when needed.
+
+Costs:
+
+- Slightly more complex paths.
+- Some operations must scan multiple partitions.
+- Cross-type byte-level deduplication is intentionally not used.
+
+Fully independent pools with unrelated identity rules are not recommended because they make `verify`, `sync`, `prune`, and recovery records harder to reason about.
+
 #### Hash Collision Policy
 
 Hash collisions are not expected with modern cryptographic hashes, but the repository must define how object identity is verified and what happens if a collision-like inconsistency is detected.
@@ -533,10 +593,17 @@ repository/
   config.json
   lock
   objects/
-    sha256/
-      ab/
-        cd/
-          abcdef...
+    data/
+      sha256/
+        ab/
+          cd/
+            abcdef...
+    chunk/
+      sha256/
+    snapshot/
+      sha256/
+    tree/
+      sha256/
   snapshots/
     2026-05-27T01-30-00Z-<id>.json
   indexes/
@@ -551,7 +618,7 @@ Notes:
 
 - `config.json` stores the repository version, object format version, hash algorithm, default compression profile, encryption mode, recovery record settings, and creation time.
 - `lock` prevents multiple processes from writing to the repository at the same time.
-- `objects` stores typed physical object envelopes keyed by object ID.
+- `objects` stores typed physical object envelopes in type partitions keyed by object ID.
 - `snapshots` stores mutable snapshot records that point to immutable snapshot metadata objects.
 - `indexes` stores rebuildable indexes and must not be treated as the only source of truth.
 - `recovery` stores optional recovery record sets.
@@ -984,6 +1051,7 @@ Basic test scenarios:
 - Restore only selected paths and verify that unrelated paths are not materialized.
 - Restore with include and exclude patterns.
 - Verify that duplicate files store only one object.
+- Verify that object scanning covers every typed object partition.
 - Verify that existing-object reuse checks object type, logical size, and hash algorithm.
 - Verify that bare matching hashes are not enough when type or logical size differs.
 - Verify that high-assurance mode compares logical bytes before reusing an existing object.
