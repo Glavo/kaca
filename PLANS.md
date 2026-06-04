@@ -73,9 +73,30 @@ Rules:
 - Record the hash algorithm in repository config and object metadata.
 - Include object type and format domain separation in the hashed representation.
 - Store logical content size and object type in the object header.
+- Treat object equality as a composite logical identity, not as a bare hash string.
 - Recompute hashes during `verify`.
 - Treat rolling hashes used by chunkers as boundary detectors only, never as object identity.
 - Never silently accept two different logical payloads with the same object ID.
+
+The logical object identity should be:
+
+```text
+objectKey = hashAlgorithm + objectType + logicalSize + objectId
+```
+
+Two objects are the same logical object only when all parts of `objectKey` match. If any part differs, they are different objects.
+
+Compression algorithm, encryption mode, payload size, and storage location are physical storage properties. They should not define logical object equality.
+
+Including `objectType` and `logicalSize` in the equality key does not replace cryptographic collision resistance. It mainly provides:
+
+- Fast mismatch detection.
+- Stronger type-safety.
+- Better index semantics.
+- Better corruption diagnostics.
+- Protection against accidental bare-hash reuse across object classes.
+
+For same-type, same-size collision concerns, use a stronger hash, a secondary hash, or high-assurance byte comparison.
 
 When adding an object whose ID already exists:
 
@@ -964,6 +985,7 @@ Basic test scenarios:
 - Restore with include and exclude patterns.
 - Verify that duplicate files store only one object.
 - Verify that existing-object reuse checks object type, logical size, and hash algorithm.
+- Verify that bare matching hashes are not enough when type or logical size differs.
 - Verify that high-assurance mode compares logical bytes before reusing an existing object.
 - Verify that compressed objects restore to the original content.
 - Verify that object headers and payloads are checked by `verify`.
