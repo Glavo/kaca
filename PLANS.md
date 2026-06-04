@@ -45,7 +45,7 @@ Implementation can still be staged. The plan must distinguish architecture cover
 
 Repository metadata and user-editable configuration are separate files.
 
-`repository.kaca` is internal binary metadata. Users should not edit it directly. It stores stable repository identity and format data:
+`repository` is internal binary metadata. Users should not edit it directly. It stores stable repository identity and format data:
 
 - Repository ID.
 - Repository format version.
@@ -57,7 +57,7 @@ Repository metadata and user-editable configuration are separate files.
 - Public encryption and key derivation parameters.
 - Creation time.
 
-`config.toml` is user-editable configuration. It stores operational preferences:
+`config` is user-editable configuration. It stores operational preferences:
 
 - Remotes.
 - Default compression profile.
@@ -66,7 +66,7 @@ Repository metadata and user-editable configuration are separate files.
 - Scheduling preferences.
 - UI and service settings.
 
-Changing `config.toml` must not change existing object identity or repository format. Changes that affect immutable repository structure require an explicit repository migration.
+Changing `config` must not change existing object identity or repository format. Changes that affect immutable repository structure require an explicit repository migration.
 
 ## 3. Core Principles
 
@@ -691,8 +691,8 @@ A local repository can use this layout:
 
 ```text
 repository/
-  repository.kaca
-  config.toml
+  repository
+  config
   lock
   objects/
     data/
@@ -723,8 +723,8 @@ repository/
 
 Notes:
 
-- `repository.kaca` stores binary internal metadata such as repository ID, repository format version, object format version, hash algorithm, metadata encoding, object layout, encryption mode, key derivation public parameters, and creation time.
-- `config.toml` stores user-editable configuration such as remotes, default compression profile, recovery record defaults, retention defaults, scheduling preferences, and UI or service settings.
+- `repository` stores binary internal metadata such as repository ID, repository format version, object format version, hash algorithm, metadata encoding, object layout, encryption mode, key derivation public parameters, and creation time.
+- `config` stores user-editable configuration such as remotes, default compression profile, recovery record defaults, retention defaults, scheduling preferences, and UI or service settings.
 - `lock` prevents multiple processes from writing to the repository at the same time.
 - `objects` stores typed physical object envelopes in type partitions keyed by object ID.
 - `packs` stores immutable packed object files and pack indexes.
@@ -1064,7 +1064,7 @@ Safe strategy:
 
 ### 9.3 Repository Format Upgrades
 
-Both `repository.kaca` and metadata object formats must record `formatVersion`.
+Both `repository` and metadata object formats must record `formatVersion`.
 
 When a newer program opens an older repository, it must clearly decide:
 
@@ -1115,7 +1115,7 @@ Changing chunker parameters can reduce deduplication efficiency or create confus
 Safe strategy:
 
 - Store chunker algorithm and parameters with every chunked file entry.
-- Record the repository default chunker profile in `repository.kaca`.
+- Record the repository default chunker profile in `repository`.
 - Allow reading old chunker profiles indefinitely.
 - Treat changes to default chunker parameters as an explicit repository configuration change.
 
@@ -1205,7 +1205,7 @@ Basic test scenarios:
 - Should high-assurance mode store or verify a secondary hash?
 - Should immutable metadata use canonical CBOR, deterministic Protocol Buffers, or a custom binary format?
 - What canonical encoding should be used for metadata object IDs?
-- Should user-editable configuration use TOML or a Git-style INI format?
+- Should the extensionless user-editable `config` file use TOML or a Git-style INI format?
 - Should very large snapshot manifests become tree-style metadata objects?
 - Which compression library and default compression level should be used?
 - What minimum size or compression ratio should decide whether an object is stored compressed or raw?
