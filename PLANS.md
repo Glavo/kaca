@@ -82,15 +82,14 @@ File content is stored in the object store by content hash. If multiple snapshot
 
 The object identity is based on the logical uncompressed content. Physical object files may be compressed, but deduplication should still be based on the original content bytes.
 
-Metadata objects, such as snapshot manifests, should also use the same object store. Object IDs are based on canonical logical bytes. Object references carry the object type.
+Metadata objects, such as snapshot manifests and tree manifests, should also use the same object store. Object IDs are based on canonical logical bytes. The object store is untyped; semantic meaning is provided by typed references and self-describing payload formats.
 
-The object type is not part of the object hash input. Type separation is provided by typed object references, typed physical partitions, and object header validation.
+The object format does not prepend object type, logical size, or repository-specific labels to the bytes used for object identity. Structured metadata payloads must contain their own magic and format version so that semantic verification can reject incorrectly interpreted bytes.
 
 Conceptually:
 
 ```text
 objectId = hash(canonicalLogicalBytes)
-objectRef = objectType + objectId
 ```
 
 For unencrypted repositories, `objectId` and `contentHash` are the same value. For encrypted repositories, `contentHash` may exist only inside encrypted metadata, while the public `objectId` is keyed.
@@ -100,30 +99,30 @@ Recommended distinction:
 ```text
 contentHash = hash(canonicalLogicalBytes)
 objectId = contentHash
-objectRef = objectType + objectId
 ```
 
-Using a bare content hash as `objectId` is acceptable because object references are typed. A unified object pool containing blobs, snapshot metadata, tree metadata, and other typed objects must not use bare `objectId` alone as a reference.
+Typed references belong to the semantic layer, not to the object store identity:
+
+```text
+blobRef = objectId + logicalSize
+snapshotRef = objectId + expectedFormat("kaca-snapshot-v1")
+treeRef = objectId + expectedFormat("kaca-tree-v1")
+```
+
+Using a bare content hash as `objectId` is acceptable because the object store only stores immutable bytes. Code that interprets structured data must always use an expected payload format and verify the payload magic and version before trusting it.
 
 `logicalSize` is validation metadata. It must be stored and checked, but it does not need to be part of the lookup key.
 
-#### Object Pool Partitioning
+#### Object Pool Layout
 
-The repository should expose one logical `ObjectStore` API, but the physical layout may partition objects by type.
+The repository exposes one logical `ObjectStore` API and one untyped physical object pool.
 
 Recommended physical layout:
 
 ```text
 objects/
-  blob/
-    ab/
-      <full-object-id>
-  snapshot/
-    ab/
-      <full-object-id>
-  tree/
-    ab/
-      <full-object-id>
+  ab/
+    <full-object-id>
 ```
 
 The object file name is the complete object ID. The fanout directory repeats the first two hex characters for directory distribution.
@@ -131,27 +130,41 @@ The object file name is the complete object ID. The fanout directory repeats the
 Object paths use fixed one-level fanout:
 
 ```text
-objects/<object-type>/<first-two-hex>/<full-object-id>
+objects/<first-two-hex>/<full-object-id>
 ```
 
 The path builder should be centralized, but fanout is part of the repository format rather than a user-configurable setting.
 
-This is different from fully independent object pools. The object store remains one subsystem with shared rules for object envelopes, verification, synchronization, recovery records, and pruning.
+The object store must not create separate physical pools for snapshots, trees, chunks, and file blobs. All immutable payloads use the same identity, envelope, verification, synchronization, recovery, packing, and pruning rules.
+
+The semantic layer must distinguish how object bytes are interpreted:
+
+```text
+snapshot record -> snapshotRef -> snapshot payload
+snapshot payload -> treeRef -> tree payload
+tree payload -> blobRef or chunk list -> file bytes
+```
 
 Benefits:
 
-- Easier type-specific scanning.
-- Lower risk of accidental type confusion.
-- Different object types can use different packing strategies.
-- Snapshot and tree metadata can be managed separately from large blobs.
-- Remote sync can transfer selected object classes when needed.
+- One object lookup path for all immutable bytes.
+- Repository-wide byte-level deduplication across whole-file blobs, chunks, and structured metadata payloads.
+- Simpler pack, sync, prune, verify, and recovery logic.
+- Cleaner encrypted repositories because public object paths do not expose semantic object classes.
+- Easier repository migration because physical storage is decoupled from metadata formats.
 
 Costs:
 
-- Slightly more complex paths.
-- Some operations must scan multiple partitions.
-- Byte-level deduplication is shared by whole-file blobs and chunk blobs.
-- Cross-type byte-level deduplication between blobs and metadata is intentionally not used.
+- Type validation must be enforced by references and payload parsers.
+- Semantic verification must traverse snapshot roots and parse expected formats.
+- Type-specific maintenance requires indexes or semantic scans instead of directory partition scans.
+
+Structured payload formats must be self-describing:
+
+```text
+kaca-snapshot-v1 := magic + version + canonical-binary-snapshot-body
+kaca-tree-v1 := magic + version + canonical-binary-tree-body
+```
 
 Fully independent pools with unrelated identity rules are not recommended because they make `verify`, `sync`, `prune`, and recovery records harder to reason about.
 
@@ -163,18 +176,14 @@ Recommended layout:
 
 ```text
 packs/
-  blob/
-    <pack-id>.pack
-    <pack-id>.idx
-  metadata/
-    <pack-id>.pack
-    <pack-id>.idx
+  <pack-id>.pack
+  <pack-id>.idx
 ```
 
-A pack file stores object records. The pack index maps each object reference to its physical location:
+A pack file stores object records. The pack index maps each object ID to its physical location:
 
 ```text
-objectRef -> packId + offset + storedSize
+objectId -> packId + offset + storedSize
 ```
 
 The simplest pack record stores the same object envelope bytes used by loose objects:
@@ -211,8 +220,8 @@ Rules:
 - Use only cryptographic hashes for object identity.
 - Record the hash algorithm in internal repository metadata.
 - Use canonical logical bytes as the object hash input.
-- Store logical content size and object type in the object header.
-- Treat object equality as typed object identity, not as a bare hash string.
+- Store logical content size in the object header.
+- Treat object equality as byte identity by object ID.
 - Recompute hashes during `verify`.
 - Treat rolling hashes used by chunkers as boundary detectors only, never as object identity.
 - Never silently accept two different logical payloads with the same object ID.
@@ -220,28 +229,28 @@ Rules:
 The logical object identity should be:
 
 ```text
-objectRef = objectType + objectId
+objectId = hash(canonicalLogicalBytes)
 ```
 
-Two objects are the same logical object only when all parts of `objectRef` match. If any part differs, they are different objects.
+Two objects are the same logical object when they have the same object ID and the same canonical logical bytes. If the same object ID resolves to different bytes, the repository must treat it as a collision or corruption event.
 
 Compression algorithm, encryption mode, payload size, and storage location are physical storage properties. They should not define logical object equality.
 
-Including `objectType` in the equality key does not replace cryptographic collision resistance. It mainly provides:
+Typed references do not replace cryptographic collision resistance. They provide semantic validation after object lookup:
 
 - Fast mismatch detection.
 - Stronger type-safety.
-- Better index semantics.
+- Better parser diagnostics.
 - Better corruption diagnostics.
-- Protection against accidental bare-hash reuse across object classes.
+- Protection against accidentally interpreting bytes with the wrong structured format.
 
 `logicalSize` remains required validation metadata and must be checked before object reuse and during `verify`.
 
-For same-type, same-size collision concerns, use a stronger hash, a secondary hash, or high-assurance byte comparison.
+For same-ID, same-size collision concerns, use a stronger hash, a secondary hash, or high-assurance byte comparison.
 
 When adding an object whose ID already exists:
 
-- Check that object type and logical size match.
+- Check that logical size matches.
 - Check that the repository hash algorithm is compatible with the object ID.
 - In normal mode, trust the cryptographic object ID after header validation.
 - In high-assurance mode, read the existing object and compare logical bytes before reusing it.
@@ -288,7 +297,6 @@ Sidecar metadata would make raw payload files easier to represent, but it would 
 The object header should be minimal and versioned. In an unencrypted repository, it should identify:
 
 - Object format version.
-- Object type.
 - Logical content hash.
 - Logical content size.
 - Payload compression algorithm.
@@ -306,12 +314,11 @@ The object path should be derived from the object ID:
 
 ```text
 objects/
-  blob/
-    ab/
-      abcdef...
+  ab/
+    abcdef...
 ```
 
-For blob objects, the object ID is derived from canonical file bytes or canonical chunk bytes. For metadata objects, the object ID is derived from canonical metadata bytes. This keeps deduplication and metadata integrity stable even as the physical storage format evolves.
+For all immutable objects, the object ID is derived from canonical logical bytes. File bytes, chunk bytes, snapshot metadata bytes, and tree metadata bytes all use the same object identity rule. This keeps deduplication and metadata integrity stable even as the physical storage format evolves.
 
 ### 3.4 Optional Encryption
 
@@ -448,7 +455,7 @@ Remote synchronization should be designed as transport for repository state, not
 
 The remote model should handle:
 
-- Immutable typed objects.
+- Immutable objects.
 - Mutable snapshot records.
 - Optional recovery record sets.
 - Rebuildable indexes.
@@ -491,7 +498,7 @@ The remote layout can mirror the local repository layout, or it can use a provid
 
 ### 3.7 Large Object Chunking
 
-Large files should be representable as ordered chunk references in the snapshot manifest. A chunk should use the same `blob` object type as a whole-file object.
+Large files should be representable as ordered chunk references in the snapshot manifest. A chunk uses the same untyped object store as whole-file bytes.
 
 Chunking must not change the logical identity of a file. A file's logical identity is based on its complete canonical file bytes, not on the chunk list used to store it.
 
@@ -502,7 +509,7 @@ fileContentHash = hash(complete-file-bytes)
 fileSize = complete-file-size
 ```
 
-The chunk list is a storage representation for that file. Changing chunker parameters may change chunk boundaries and chunk blob references, but it must not change `fileContentHash` for identical file bytes.
+The chunk list is a storage representation for that file. Changing chunker parameters may change chunk boundaries and chunk object references, but it must not change `fileContentHash` for identical file bytes.
 
 Recommended logical pipeline for large files:
 
@@ -574,15 +581,15 @@ chunk bytes
   -> loose object or pack
 ```
 
-Encrypted repositories use the same chunk boundaries, but derive public chunk blob object IDs with the repository `object-id-key`.
+Encrypted repositories use the same chunk boundaries, but derive public chunk object IDs with the repository `object-id-key`.
 
 Chunker parameters must be stored in the manifest or internal repository metadata. Changing chunker parameters changes deduplication behavior, so a repository should treat them as part of the object format profile.
 
 Each chunk should be compressed and encrypted independently. Do not compress a whole large file as one stream before chunking, because that would destroy chunk-level deduplication and make partial repair less useful.
 
-Loose blob objects are a valid implementation slice. A pack format can group many small chunk blobs into pack files without changing snapshot manifests, as long as chunk IDs remain stable.
+Loose objects are a valid implementation slice. A pack format can group many small objects into pack files without changing snapshot manifests, as long as object IDs remain stable.
 
-Chunk-level deduplication is important for large mutable files and belongs in the architecture baseline. Its implementation can follow once whole-file blob references, snapshot objects, restore, `verify`, and `prune` are reliable.
+Chunk-level deduplication is important for large mutable files and belongs in the architecture baseline. Its implementation can follow once whole-file references, snapshot objects, restore, `verify`, and `prune` are reliable.
 
 It is most valuable for:
 
@@ -603,7 +610,7 @@ The repository format should reserve chunked object support from the beginning. 
 
 ### 3.8 Snapshot Metadata as Objects
 
-Snapshot contents should be committed as typed metadata objects in the same repository object store used by blob objects.
+Snapshot contents should be committed as structured metadata payloads in the same repository object store used by file and chunk bytes.
 
 The `snapshots` directory should store mutable snapshot records, not full manifest bodies:
 
@@ -612,14 +619,17 @@ snapshots/
   2026-05-27T01-30-00Z-<snapshot-id>.json
 ```
 
-A snapshot record points to the actual immutable snapshot object and may also contain user-editable metadata:
+A snapshot record points to the actual immutable snapshot object through a typed semantic reference and may also contain user-editable metadata:
 
 ```json
 {
   "formatVersion": 1,
   "snapshotId": "abcdef...",
   "createdAt": "2026-05-27T01:30:00Z",
-  "object": "abcdef...",
+  "object": {
+    "id": "abcdef...",
+    "format": "kaca-snapshot-v1"
+  },
   "updatedAt": "2026-05-27T02:00:00Z",
   "title": "Before dependency upgrade",
   "notes": "User-editable notes.",
@@ -631,7 +641,7 @@ A snapshot record points to the actual immutable snapshot object and may also co
 }
 ```
 
-The snapshot object payload contains the snapshot manifest. This gives snapshot metadata the same storage guarantees as blob objects:
+The snapshot object payload contains the snapshot manifest. This gives snapshot metadata the same storage guarantees as file and chunk objects:
 
 - Compression.
 - Optional encryption.
@@ -647,7 +657,7 @@ Only non-critical user metadata should be mutable. Restore-critical information 
 - Source identity.
 - Parent snapshot object ID.
 - File tree entries.
-- Object references.
+- Typed semantic references.
 - Chunk lists.
 - Required restore metadata.
 
@@ -662,7 +672,7 @@ Mutable records may include:
 
 Updating mutable metadata must not create a new snapshot object and must not change the snapshot object ID.
 
-One implementation slice can store one snapshot manifest as one snapshot object. A tree-style metadata model can split very large manifests into reusable directory metadata objects without changing the snapshot record model.
+One implementation slice can store one snapshot manifest as one snapshot object. A tree-style metadata model can split very large manifests into reusable directory metadata payloads without changing the snapshot record model.
 
 Snapshot object payloads should not use plain JSON as the long-term storage format. JSON examples in this document are schema illustrations only.
 
@@ -674,9 +684,9 @@ The immutable metadata stored in the object pool should use a canonical binary e
 - Explicit integer timestamp representation.
 - Stable enum values for entry types.
 - No floating point values.
-- A format version inside every metadata object.
+- A magic and format version inside every structured metadata payload.
 
-The object ID for a metadata object should be computed from the canonical uncompressed metadata bytes before compression and encryption.
+The object ID for a metadata payload should be computed from the canonical uncompressed metadata bytes before compression and encryption.
 
 Mutable snapshot records outside the object pool may use JSON because they are user-editable catalog data, not content-addressed immutable metadata.
 
@@ -693,10 +703,10 @@ kaca restore <snapshot-id> <target> --include "src/**" --exclude "build/**"
 
 This is enough for correctness but may be inefficient for very large snapshots because the whole manifest must be read.
 
-Efficient long-term sparse checkout needs tree-style metadata objects:
+Efficient long-term sparse checkout needs tree-style structured metadata payloads:
 
 ```text
-snapshot object -> root tree object -> directory tree objects -> file object references
+snapshot object -> root tree reference -> directory tree references -> file content references
 ```
 
 With tree objects, a restore operation for `src/main/**` only needs to load the relevant metadata branches and referenced data objects.
@@ -759,18 +769,11 @@ repository/
   config.toml
   lock
   objects/
-    blob/
-      ab/
-        abcdef...
-    snapshot/
-      ab/
-        abcdef...
-    tree/
-      ab/
-        abcdef...
+    ab/
+      abcdef...
   packs/
-    blob/
-    metadata/
+    <pack-id>.pack
+    <pack-id>.idx
   snapshots/
     2026-05-27T01-30-00Z-<id>.json
   indexes/
@@ -786,9 +789,9 @@ Notes:
 - `repository.meta` stores binary internal metadata such as repository ID, repository format version, object format version, hash algorithm, metadata encoding, canonical compression profile, object layout, encryption mode, key derivation public parameters, and creation time.
 - `config.toml` stores user-editable configuration such as remotes, recovery record defaults, retention defaults, scheduling preferences, and UI or service settings.
 - `lock` prevents multiple processes from writing to the repository at the same time.
-- `objects` stores typed physical object envelopes in type partitions keyed by object ID.
+- `objects` stores untyped physical object envelopes keyed by object ID.
 - `packs` stores immutable packed object files and pack indexes.
-- `snapshots` stores mutable snapshot records that point to immutable snapshot metadata objects.
+- `snapshots` stores mutable snapshot records that point to immutable snapshot metadata payloads.
 - `indexes` stores rebuildable indexes and must not be treated as the only source of truth.
 - `recovery` stores optional recovery record sets.
 - `tmp` stores incomplete temporary writes.
@@ -800,7 +803,6 @@ The initial object format should be:
 ```text
 magic
 objectFormatVersion
-objectType
 headerLength
 header
 payload
@@ -851,8 +853,8 @@ Additional fields to define:
 - Extended attributes.
 - ACLs.
 - Case sensitivity policy.
-- Whole-file object references.
-- Chunked object references.
+- Whole-file content references.
+- Chunked content references.
 
 ## 6. Main Modules
 
@@ -905,7 +907,7 @@ Suggested capabilities:
 
 ### 6.5 ObjectStore
 
-Writes, reads, and verifies typed repository objects.
+Writes, reads, and verifies untyped repository objects.
 
 Suggested capabilities:
 
@@ -914,7 +916,7 @@ Suggested capabilities:
 - Store an object uncompressed when compression does not reduce size enough.
 - Write and parse object headers.
 - Encrypt and decrypt object private headers and payloads when repository encryption is enabled.
-- Store blob objects and snapshot metadata objects through the same envelope format.
+- Store file bytes, chunk bytes, and structured metadata payloads through the same envelope format.
 - Write objects through temporary files.
 - Verify the logical content hash after writing.
 - Authenticate encrypted payloads before decompression.
@@ -930,7 +932,7 @@ Suggested capabilities:
 - Select loose objects for packing.
 - Write temporary pack files and indexes.
 - Publish packs atomically.
-- Resolve object references to pack offsets.
+- Resolve object IDs to pack offsets.
 - Read object envelopes from packs.
 - Verify pack indexes against pack contents.
 - Repack live objects during pruning.
@@ -951,7 +953,7 @@ Suggested capabilities:
 
 ### 6.8 SnapshotStore
 
-Builds snapshot manifests, stores them as typed snapshot objects, and manages mutable snapshot records.
+Builds snapshot manifests, stores them as structured snapshot payloads, and manages mutable snapshot records.
 
 Suggested capabilities:
 
@@ -961,7 +963,7 @@ Suggested capabilities:
 - List snapshot records.
 - Read a specific snapshot through its record.
 - Compare two snapshots.
-- Rebuild the object reference index from snapshot records and snapshot objects.
+- Rebuild the object reachability index from snapshot records and snapshot objects.
 
 ### 6.9 Restore
 
@@ -988,7 +990,7 @@ Suggested capabilities:
 - Verify manifest references.
 - Detect orphan objects.
 - Detect corrupted objects.
-- Verify chunk lists and blob object references.
+- Verify chunk lists and content object references.
 - Verify recovery record sets.
 
 ### 6.11 Prune
@@ -1071,9 +1073,9 @@ kaca serve --repo <repository>
 The architecture baseline includes:
 
 - Local and remote repositories.
-- Typed object envelopes.
-- Blob objects for whole files and chunks.
-- Snapshot metadata objects.
+- Untyped object envelopes.
+- Untyped objects for whole files, chunks, and structured metadata payloads.
+- Typed semantic references for snapshots, trees, files, and chunks.
 - Mutable snapshot records.
 - Compression.
 - Optional encryption.
@@ -1123,7 +1125,7 @@ Safe strategy:
 
 ### 9.3 Repository Format Upgrades
 
-Both `repository.meta` and metadata object formats must record `formatVersion`.
+Both `repository.meta` and structured metadata payload formats must record `formatVersion`.
 
 When a newer program opens an older repository, it must clearly decide:
 
@@ -1188,7 +1190,7 @@ Safe strategy:
 - Update snapshot records atomically.
 - Keep mutable metadata separate from restore-critical snapshot object content.
 - Make `verify` report orphan snapshot objects.
-- Let `repair` rebuild a minimal snapshot record by scanning typed snapshot objects when possible.
+- Let `repair` rebuild a minimal snapshot record by scanning structured snapshot payloads when possible.
 
 ### 9.9 Unsafe Hard Link Imports
 
@@ -1234,9 +1236,9 @@ Basic test scenarios:
 - Restore only selected paths and verify that unrelated paths are not materialized.
 - Restore with include and exclude patterns.
 - Verify that duplicate files store only one object.
-- Verify that object scanning covers every typed object partition.
-- Verify that existing-object reuse checks object type, logical size, and repository hash compatibility.
-- Verify that bare matching hashes are not enough when object type differs.
+- Verify that object scanning covers the unified object pool.
+- Verify that existing-object reuse checks logical size and repository hash compatibility.
+- Verify that structured payload parsing fails when an expected format does not match.
 - Verify that logical size mismatches fail validation.
 - Verify that high-assurance mode compares logical bytes before reusing an existing object.
 - Verify that compressed objects restore to the original content.
@@ -1268,7 +1270,7 @@ Basic test scenarios:
 - Should high-assurance mode store or verify a secondary hash?
 - Should immutable metadata use canonical CBOR, deterministic Protocol Buffers, or a custom binary format?
 - What canonical encoding should be used for metadata object IDs?
-- Should very large snapshot manifests become tree-style metadata objects?
+- Should very large snapshot manifests become tree-style structured metadata payloads?
 - Which compression library and default compression level should be used?
 - What minimum size or compression ratio should decide whether an object is stored compressed or raw?
 - Should future platforms support reflink or copy-on-write clone optimization for raw object payloads?
@@ -1282,7 +1284,7 @@ Basic test scenarios:
 - Should encrypted repositories encrypt recovery set manifests when recovery records are stored externally?
 - Should large file chunking use fixed-size chunks or rolling hash?
 - What large-file threshold should enable chunking by default?
-- Should loose blob objects be packed after snapshot creation?
+- Should loose objects be packed after snapshot creation?
 - What pattern syntax should sparse restore use?
 - Should long-lived sparse checkout state be stored in the target directory or in the repository?
 - Is a database index such as SQLite needed?
@@ -1293,7 +1295,7 @@ Basic test scenarios:
 
 ## 12. Recommended Sequence
 
-1. Define the repository format, typed object envelope format, mutable snapshot record format, encryption extension points, recovery record layout, and manifest schema.
+1. Define the repository format, untyped object envelope format, mutable snapshot record format, encryption extension points, recovery record layout, and manifest schema.
 2. Implement `Repository` and compressed `ObjectStore`.
 3. Implement `Scanner` and file-level `Hasher`.
 4. Implement snapshot object writing and mutable snapshot records.
