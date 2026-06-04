@@ -45,7 +45,7 @@ Implementation can still be staged. The plan must distinguish architecture cover
 
 Repository metadata and user-editable configuration are separate files.
 
-`repository` is internal binary metadata. Users should not edit it directly. It stores stable repository identity and format data:
+`repository.meta` is internal binary metadata. Users should not edit it directly. It stores stable repository identity and format data:
 
 - Repository ID.
 - Repository format version.
@@ -691,7 +691,7 @@ A local repository can use this layout:
 
 ```text
 repository/
-  repository
+  repository.meta
   config.toml
   lock
   objects/
@@ -723,7 +723,7 @@ repository/
 
 Notes:
 
-- `repository` stores binary internal metadata such as repository ID, repository format version, object format version, hash algorithm, metadata encoding, object layout, encryption mode, key derivation public parameters, and creation time.
+- `repository.meta` stores binary internal metadata such as repository ID, repository format version, object format version, hash algorithm, metadata encoding, object layout, encryption mode, key derivation public parameters, and creation time.
 - `config.toml` stores user-editable configuration such as remotes, default compression profile, recovery record defaults, retention defaults, scheduling preferences, and UI or service settings.
 - `lock` prevents multiple processes from writing to the repository at the same time.
 - `objects` stores typed physical object envelopes in type partitions keyed by object ID.
@@ -1064,7 +1064,7 @@ Safe strategy:
 
 ### 9.3 Repository Format Upgrades
 
-Both `repository` and metadata object formats must record `formatVersion`.
+Both `repository.meta` and metadata object formats must record `formatVersion`.
 
 When a newer program opens an older repository, it must clearly decide:
 
@@ -1115,7 +1115,7 @@ Changing chunker parameters can reduce deduplication efficiency or create confus
 Safe strategy:
 
 - Store chunker algorithm and parameters with every chunked file entry.
-- Record the repository default chunker profile in `repository`.
+- Record the repository default chunker profile in `repository.meta`.
 - Allow reading old chunker profiles indefinitely.
 - Treat changes to default chunker parameters as an explicit repository configuration change.
 
@@ -1205,7 +1205,6 @@ Basic test scenarios:
 - Should high-assurance mode store or verify a secondary hash?
 - Should immutable metadata use canonical CBOR, deterministic Protocol Buffers, or a custom binary format?
 - What canonical encoding should be used for metadata object IDs?
-- What should the internal binary repository metadata file be named?
 - Should very large snapshot manifests become tree-style metadata objects?
 - Which compression library and default compression level should be used?
 - What minimum size or compression ratio should decide whether an object is stored compressed or raw?
