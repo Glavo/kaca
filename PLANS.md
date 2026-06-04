@@ -57,7 +57,7 @@ Repository metadata and user-editable configuration are separate files.
 - Public encryption and key derivation parameters.
 - Creation time.
 
-`config` is user-editable configuration. It stores operational preferences:
+`config.toml` is user-editable configuration. It stores operational preferences:
 
 - Remotes.
 - Default compression profile.
@@ -66,7 +66,7 @@ Repository metadata and user-editable configuration are separate files.
 - Scheduling preferences.
 - UI and service settings.
 
-Changing `config` must not change existing object identity or repository format. Changes that affect immutable repository structure require an explicit repository migration.
+Changing `config.toml` must not change existing object identity or repository format. Changes that affect immutable repository structure require an explicit repository migration.
 
 ## 3. Core Principles
 
@@ -692,7 +692,7 @@ A local repository can use this layout:
 ```text
 repository/
   repository
-  config
+  config.toml
   lock
   objects/
     data/
@@ -724,7 +724,7 @@ repository/
 Notes:
 
 - `repository` stores binary internal metadata such as repository ID, repository format version, object format version, hash algorithm, metadata encoding, object layout, encryption mode, key derivation public parameters, and creation time.
-- `config` stores user-editable configuration such as remotes, default compression profile, recovery record defaults, retention defaults, scheduling preferences, and UI or service settings.
+- `config.toml` stores user-editable configuration such as remotes, default compression profile, recovery record defaults, retention defaults, scheduling preferences, and UI or service settings.
 - `lock` prevents multiple processes from writing to the repository at the same time.
 - `objects` stores typed physical object envelopes in type partitions keyed by object ID.
 - `packs` stores immutable packed object files and pack indexes.
@@ -1205,7 +1205,7 @@ Basic test scenarios:
 - Should high-assurance mode store or verify a secondary hash?
 - Should immutable metadata use canonical CBOR, deterministic Protocol Buffers, or a custom binary format?
 - What canonical encoding should be used for metadata object IDs?
-- Should the extensionless user-editable `config` file use TOML or a Git-style INI format?
+- What should the internal binary repository metadata file be named?
 - Should very large snapshot manifests become tree-style metadata objects?
 - Which compression library and default compression level should be used?
 - What minimum size or compression ratio should decide whether an object is stored compressed or raw?
