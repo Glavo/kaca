@@ -139,6 +139,35 @@ Each recovery set should record:
 - Redundancy percentage.
 - Creation time.
 
+Default placement should be inside the repository:
+
+```text
+repository/
+  recovery/
+    sets/
+      <set-id>/
+        manifest.json
+        volumes/
+          <set-id>.par2
+          <set-id>.vol00+01.par2
+```
+
+This default placement helps with local bit rot, partial file corruption, accidental truncation, and damaged object files while keeping recovery records easy to manage with the repository.
+
+Recovery records must not be stored under `objects` or `snapshots`, and they must not be represented as snapshot entries. They are repository maintenance data, not user data.
+
+A recovery set must not protect its own PAR2 files. Otherwise, recovery generation becomes recursive and pruning becomes ambiguous. It may protect older recovery metadata only if a future format explicitly defines that behavior.
+
+The tool should also support an external recovery output directory:
+
+```text
+kaca recovery create --repo <repository> --redundancy 10 --output <recovery-directory>
+```
+
+External recovery records are useful when the repository itself is stored on a disk or network location that may fail as a whole. The recovery set manifest should include the repository ID and protected file paths relative to the repository root so that external records can be matched back to the correct repository.
+
+For encrypted repositories, recovery records should protect encrypted physical files. The PAR2 payload does not need the encryption key to repair damaged bytes. However, recovery set manifests and file names may still leak repository layout and object sizes, so a future encrypted recovery manifest mode may be needed.
+
 Recovery records should be optional and generated explicitly at first. Automatic recovery record generation can be added later after pruning and retention semantics are stable.
 
 ### 3.6 Atomic Writes
@@ -406,6 +435,7 @@ kaca init <repository> --encrypt
 kaca stats --repo <repository>
 kaca repair --repo <repository>
 kaca recovery create --repo <repository> --redundancy 10
+kaca recovery create --repo <repository> --redundancy 10 --output <recovery-directory>
 kaca recovery verify --repo <repository>
 kaca recovery repair --repo <repository>
 kaca mount <snapshot-id> --repo <repository>
@@ -532,6 +562,7 @@ Basic test scenarios:
 - Verify that wrong keys fail before decompression or restore.
 - Verify that recovery records detect physical file corruption.
 - Verify that recovery records can repair a damaged protected file when enough redundancy is available.
+- Verify that external recovery records can be matched to the correct repository by repository ID.
 - Manually corrupt an object and confirm that `verify` detects it.
 - Delete an old snapshot without deleting objects that are still referenced.
 - Confirm that interrupted backups do not pollute the official repository state with temporary files.
@@ -548,6 +579,7 @@ Basic test scenarios:
 - Should recovery records use an external PAR2 implementation or an internal Reed-Solomon implementation?
 - What is the default redundancy percentage for recovery records?
 - Should recovery records protect every snapshot immediately or be generated in batches?
+- Should encrypted repositories encrypt recovery set manifests when recovery records are stored externally?
 - Should large file chunking use fixed-size chunks or rolling hash?
 - Is a database index such as SQLite needed?
 - Should Windows ACLs and Unix permissions be included in the first version?
