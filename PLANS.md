@@ -70,6 +70,8 @@ Repository metadata and user-editable configuration are separate files.
 
 Changing `config.toml` preserves existing object identity and repository format. Changes that affect immutable repository structure require an explicit repository migration.
 
+Concrete repository binary formats are defined in `docs/repository-format.md`. The user-editable configuration schema is defined in `docs/configuration.md`.
+
 ## 3. Core Principles
 
 ### 3.1 Snapshots Are Complete Views
@@ -836,17 +838,9 @@ Notes:
 
 Indexes can remain rebuildable from snapshot records and objects when needed.
 
-The initial object format should be:
+The concrete binary formats for `repository.meta`, object envelopes, structured payloads, pack files, and pack indexes are defined in `docs/repository-format.md`.
 
-```text
-magic
-objectFormatVersion
-headerLength
-header
-payload
-```
-
-The exact binary encoding is an implementation decision, but the header must be small, deterministic, and independent of snapshot records. This allows individual object files to be verified even when indexes are missing.
+The concrete `config.toml` schema is defined in `docs/configuration.md`.
 
 ## 5. Snapshot Object Draft
 
@@ -1327,8 +1321,6 @@ Basic test scenarios:
 
 - Should the default hash algorithm be `SHA-256` or `BLAKE3`?
 - Should high-assurance mode store or verify a secondary hash?
-- Should immutable metadata use canonical CBOR, deterministic Protocol Buffers, or a custom binary format?
-- What canonical encoding should be used for metadata object IDs?
 - Should very large snapshot manifests become tree-style structured metadata payloads?
 - Which compression library and default compression level should be used?
 - What minimum size or compression ratio should decide whether an object is stored compressed or raw?
@@ -1354,7 +1346,7 @@ Basic test scenarios:
 
 ## 12. Implementation Sequence
 
-1. Define the repository format, untyped object envelope format, mutable snapshot record format, encryption extension points, recovery record layout, and manifest schema.
+1. Implement the repository binary format, user configuration schema, mutable snapshot record format, encryption extension points, recovery record layout, and manifest schema.
 2. Implement `Repository` and compressed `ObjectStore`.
 3. Implement `Scanner` and file-level `Hasher`.
 4. Implement snapshot object writing and mutable snapshot records.
