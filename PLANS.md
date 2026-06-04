@@ -130,6 +130,56 @@ Costs:
 
 Fully independent pools with unrelated identity rules are not recommended because they make `verify`, `sync`, `prune`, and recovery records harder to reason about.
 
+#### Pack Files
+
+Loose object files are simple, but large repositories can contain too many small files. Pack files group many objects into larger immutable physical files.
+
+Recommended layout:
+
+```text
+packs/
+  data/
+    <pack-id>.pack
+    <pack-id>.idx
+  chunk/
+    <pack-id>.pack
+    <pack-id>.idx
+  metadata/
+    <pack-id>.pack
+    <pack-id>.idx
+```
+
+A pack file stores object records. The pack index maps each logical object key to its physical location:
+
+```text
+objectKey -> packId + offset + storedSize
+```
+
+The simplest pack record stores the same object envelope bytes used by loose objects:
+
+```text
+pack record := object-envelope
+```
+
+This keeps object verification, compression, encryption, and metadata parsing identical for loose objects and packed objects.
+
+Pack files should be immutable. New objects are written as loose objects or into new pack files. Existing pack files should not be modified in place.
+
+Pack creation flow:
+
+1. Select loose objects to pack.
+2. Write a temporary pack file.
+3. Write a temporary pack index.
+4. Verify every indexed object can be read from the pack.
+5. Atomically publish the pack and index.
+6. Remove packed loose objects only after verification succeeds.
+
+Pruning packed objects requires repacking. Individual objects inside a pack should not be deleted in place. A prune operation should compute live objects, write new packs containing live objects, then remove obsolete packs after verification.
+
+Remote synchronization should treat packs as immutable transfer units. This avoids remote append semantics and makes interrupted uploads easier to recover.
+
+Recovery records should protect pack files and pack indexes. This is more efficient than protecting millions of small loose objects.
+
 #### Hash Collision Policy
 
 Hash collisions are not expected with modern cryptographic hashes, but the repository must define how object identity is verified and what happens if a collision-like inconsistency is detected.
@@ -609,6 +659,10 @@ repository/
       ab/
     tree/
       ab/
+  packs/
+    data/
+    chunk/
+    metadata/
   snapshots/
     2026-05-27T01-30-00Z-<id>.json
   indexes/
@@ -624,6 +678,7 @@ Notes:
 - `config.json` stores the repository version, object format version, hash algorithm, default compression profile, encryption mode, recovery record settings, and creation time.
 - `lock` prevents multiple processes from writing to the repository at the same time.
 - `objects` stores typed physical object envelopes in type partitions keyed by object ID.
+- `packs` stores immutable packed object files and pack indexes.
 - `snapshots` stores mutable snapshot records that point to immutable snapshot metadata objects.
 - `indexes` stores rebuildable indexes and must not be treated as the only source of truth.
 - `recovery` stores optional recovery record sets.
@@ -757,7 +812,22 @@ Suggested capabilities:
 - Atomically move objects into the `objects` directory.
 - Read and decompress objects for restore.
 
-### 6.6 Crypto
+### 6.6 PackStore
+
+Manages immutable pack files and pack indexes.
+
+Suggested capabilities:
+
+- Select loose objects for packing.
+- Write temporary pack files and indexes.
+- Publish packs atomically.
+- Resolve object keys to pack offsets.
+- Read object envelopes from packs.
+- Verify pack indexes against pack contents.
+- Repack live objects during pruning.
+- Coordinate pack transfer with remote synchronization.
+
+### 6.7 Crypto
 
 Manages optional repository encryption.
 
@@ -770,7 +840,7 @@ Suggested capabilities:
 - Encrypt and decrypt snapshot manifests when full repository encryption is enabled.
 - Rotate or migrate encryption settings in a controlled future format upgrade.
 
-### 6.7 SnapshotStore
+### 6.8 SnapshotStore
 
 Builds snapshot manifests, stores them as typed snapshot objects, and manages mutable snapshot records.
 
@@ -784,7 +854,7 @@ Suggested capabilities:
 - Compare two snapshots.
 - Rebuild the object reference index from snapshot records and snapshot objects.
 
-### 6.8 Restore
+### 6.9 Restore
 
 Restores files from a snapshot.
 
@@ -798,7 +868,7 @@ Suggested capabilities:
 - Restore timestamps and basic permissions.
 - Restore chunked files by streaming ordered chunk objects.
 
-### 6.9 Verify
+### 6.10 Verify
 
 Checks repository integrity.
 
@@ -812,7 +882,7 @@ Suggested capabilities:
 - Verify chunk lists and chunk object references.
 - Verify recovery record sets.
 
-### 6.10 Prune
+### 6.11 Prune
 
 Deletes old snapshots according to retention policy and performs safe garbage collection.
 
@@ -824,7 +894,7 @@ Suggested capabilities:
 - Remove unreferenced objects.
 - Support dry run.
 
-### 6.11 RecoveryStore
+### 6.12 RecoveryStore
 
 Manages optional recovery records for repository files.
 
@@ -836,7 +906,7 @@ Suggested capabilities:
 - Track which snapshots, objects, and metadata files are protected by each recovery set.
 - Coordinate with `prune` so recovery records do not reference deleted repository files indefinitely.
 
-### 6.12 RemoteStore
+### 6.13 RemoteStore
 
 Manages remote repository synchronization.
 
@@ -1063,6 +1133,8 @@ Basic test scenarios:
 - Verify that compressed objects restore to the original content.
 - Verify that object headers and payloads are checked by `verify`.
 - Verify that objects remain self-describing without sidecar metadata files.
+- Pack loose objects and verify that packed objects restore correctly.
+- Repack live objects during pruning without losing references.
 - Verify encrypted objects authenticate, decrypt, decompress, and restore to the original content.
 - Verify that wrong keys fail before decompression or restore.
 - Verify that recovery records detect physical file corruption.
