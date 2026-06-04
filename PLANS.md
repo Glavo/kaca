@@ -9,7 +9,8 @@ This document records the initial architecture plan for `kaca`, an incremental b
 - Treat every snapshot as a complete directory view, not as a patch chain that must be replayed from the beginning.
 - Keep the backup repository verifiable, restorable, and safely cleanable.
 - Prioritize data reliability first, then optimize speed, storage efficiency, and user experience.
-- Leave room for future remote repositories, compression, encryption, chunk-level deduplication, and scheduled jobs.
+- Use compressed object storage as part of the initial repository format.
+- Leave room for future remote repositories, encryption, chunk-level deduplication, and scheduled jobs.
 
 ## 2. Non-Goals
 
@@ -36,6 +37,8 @@ Restoring an arbitrary snapshot should not require replaying all previous snapsh
 
 File content is stored in the object store by content hash. If multiple snapshots reference the same content, the repository stores that content only once.
 
+The object identity is based on the logical uncompressed content. Physical object files may be compressed, but deduplication should still be based on the original content bytes.
+
 The initial version should use file-level deduplication:
 
 - Hash small and regular files as whole files.
@@ -44,7 +47,41 @@ The initial version should use file-level deduplication:
 
 A chunk model can be introduced later for large files.
 
-### 3.3 Atomic Writes
+### 3.3 Compressed Object Envelope
+
+Because object compression is a core feature, the initial physical object format should be an envelope instead of raw file bytes.
+
+The object file should contain:
+
+```text
+object-file := object-header + payload
+payload := raw-content | compressed-content
+```
+
+The object header should be minimal and versioned. It should identify:
+
+- Object format version.
+- Content hash algorithm.
+- Logical content hash.
+- Logical content size.
+- Payload compression algorithm.
+- Payload size.
+
+The payload may be stored uncompressed when compression is disabled for that object or when compression does not reduce size enough. The header must explicitly record that decision.
+
+The object path should still be derived from the logical content hash:
+
+```text
+objects/
+  sha256/
+    ab/
+      cd/
+        abcdef...
+```
+
+This keeps deduplication stable even if the physical storage format changes later.
+
+### 3.4 Atomic Writes
 
 Snapshot creation must not leave behind a half-successful snapshot.
 
@@ -58,13 +95,14 @@ Recommended write order:
 
 If the process is interrupted, the repository should be able to detect and clean temporary files through `repair` or `verify`.
 
-### 3.4 Verifiability
+### 3.5 Verifiability
 
 The repository must support integrity checks:
 
 - Snapshot manifests are parseable.
 - Objects referenced by manifests exist.
-- Object hashes match object content.
+- Object headers are parseable and compatible with the repository format.
+- Decompressed object content matches the logical content hash.
 - Indexes can be rebuilt from snapshots and objects.
 - Deleting old snapshots does not delete objects that are still referenced.
 
@@ -90,14 +128,26 @@ repository/
 
 Notes:
 
-- `config.json` stores the repository version, hash algorithm, compression algorithm, encryption settings, and creation time.
+- `config.json` stores the repository version, object format version, hash algorithm, default compression profile, encryption settings, and creation time.
 - `lock` prevents multiple processes from writing to the repository at the same time.
-- `objects` stores content objects.
+- `objects` stores physical object envelopes keyed by logical content hash.
 - `snapshots` stores snapshot manifests.
 - `indexes` stores rebuildable indexes and must not be treated as the only source of truth.
 - `tmp` stores incomplete temporary writes.
 
 Indexes can be simple in the first phase. They should be rebuildable from all snapshots when needed.
+
+The initial object format should be:
+
+```text
+magic
+objectFormatVersion
+headerLength
+header
+payload
+```
+
+The exact binary encoding can be decided later, but the header must be small, deterministic, and independent of snapshot manifests. This allows individual object files to be verified even when indexes are missing.
 
 ## 5. Snapshot Manifest Draft
 
@@ -119,8 +169,10 @@ Each snapshot manifest describes one snapshot:
       "size": 1024,
       "modifiedAt": "2026-05-27T01:00:00Z",
       "object": {
-        "hash": "sha256:...",
-        "size": 1024
+        "contentHash": "sha256:...",
+        "contentSize": 1024,
+        "storedSize": 512,
+        "compression": "zstd"
       }
     }
   ]
@@ -182,10 +234,13 @@ Writes, reads, and verifies content objects.
 Suggested capabilities:
 
 - Check whether an object already exists by hash.
+- Compress object payloads.
+- Store an object uncompressed when compression does not reduce size enough.
+- Write and parse object headers.
 - Write objects through temporary files.
-- Verify the hash after writing.
+- Verify the logical content hash after writing.
 - Atomically move objects into the `objects` directory.
-- Read objects for restore.
+- Read and decompress objects for restore.
 
 ### 6.5 SnapshotStore
 
@@ -265,6 +320,8 @@ The first useful version should include:
 
 - Local repository.
 - File-level deduplication.
+- Object compression.
+- Versioned object envelope format.
 - `init`.
 - `snapshot`.
 - `list`.
@@ -278,7 +335,6 @@ The first useful version should include:
 
 The MVP should not include:
 
-- Compression.
 - Encryption.
 - Chunk-level deduplication.
 - Remote repositories.
@@ -342,6 +398,8 @@ Basic test scenarios:
 - Restore a complete snapshot.
 - Restore a single file.
 - Verify that duplicate files store only one object.
+- Verify that compressed objects restore to the original content.
+- Verify that object headers and payloads are checked by `verify`.
 - Manually corrupt an object and confirm that `verify` detects it.
 - Delete an old snapshot without deleting objects that are still referenced.
 - Confirm that interrupted backups do not pollute the official repository state with temporary files.
@@ -350,7 +408,8 @@ Basic test scenarios:
 
 - Should the default hash algorithm be `SHA-256` or `BLAKE3`?
 - Should manifests use JSON, CBOR, MessagePack, or a custom binary format?
-- Should compression happen at the object layer or the chunk layer?
+- Which compression library and default compression level should be used?
+- What minimum size or compression ratio should decide whether an object is stored compressed or raw?
 - How should encryption interact with content deduplication?
 - Should large file chunking use fixed-size chunks or rolling hash?
 - Is a database index such as SQLite needed?
@@ -361,8 +420,8 @@ Basic test scenarios:
 
 ## 12. Recommended Sequence
 
-1. Define the repository format and manifest schema.
-2. Implement `Repository` and `ObjectStore`.
+1. Define the repository format, object envelope format, and manifest schema.
+2. Implement `Repository` and compressed `ObjectStore`.
 3. Implement `Scanner` and file-level `Hasher`.
 4. Implement the `snapshot` write flow.
 5. Implement `list` and `show`.
@@ -370,4 +429,4 @@ Basic test scenarios:
 7. Implement `diff`.
 8. Implement `verify`.
 9. Add tests for crash recovery and integrity scenarios.
-10. Decide whether to add compression, encryption, and chunk-level deduplication.
+10. Decide whether to add encryption and chunk-level deduplication.
