@@ -82,29 +82,30 @@ File content is stored in the object store by content hash. If multiple snapshot
 
 The object identity is based on the logical uncompressed content. Physical object files may be compressed, but deduplication should still be based on the original content bytes.
 
-Metadata objects, such as snapshot manifests, should also use the same object store. The object pool is unified, but object IDs must be type-domain-separated. A snapshot object ID should be computed from its canonical typed metadata body, not from file content bytes alone.
+Metadata objects, such as snapshot manifests, should also use the same object store. Object IDs are based on canonical logical bytes. Object references carry the object type.
 
-The object type is part of the hashed representation. The goal is not separate storage namespaces; the goal is preventing type confusion while keeping unified addressing.
+The object type is not part of the object hash input. Type separation is provided by typed object references, typed physical partitions, and object header validation.
 
 Conceptually:
 
 ```text
-objectId = hash("kaca-object-v1" || objectType || canonicalLogicalBytes)
+objectId = hash(canonicalLogicalBytes)
+objectRef = objectType + objectId
 ```
 
-A bare hash of logical bytes may still be recorded as `contentHash`, especially for data objects. However, `contentHash` is a content digest, not the universal identity of an object in the unified object pool.
+For unencrypted repositories, `objectId` and `contentHash` are the same value. For encrypted repositories, `contentHash` may exist only inside encrypted metadata, while the public `objectId` is keyed.
 
 Recommended distinction:
 
 ```text
 contentHash = hash(canonicalLogicalBytes)
-objectId = hash("kaca-object-v1" || objectType || canonicalLogicalBytes)
+objectId = contentHash
 objectRef = objectType + objectId
 ```
 
-Using a bare hash as the only object ID is acceptable only in a store that contains one semantic object class. A unified object pool containing file data, chunks, snapshot metadata, tree metadata, and other typed objects should use typed object IDs and typed object references.
+Using a bare content hash as `objectId` is acceptable because object references are typed. A unified object pool containing file data, chunks, snapshot metadata, tree metadata, and other typed objects must not use bare `objectId` alone as a reference.
 
-`logicalSize` is validation metadata. It must be stored and checked, but it does not need to be part of the lookup key when `objectId` already includes the object type domain.
+`logicalSize` is validation metadata. It must be stored and checked, but it does not need to be part of the lookup key.
 
 #### Object Pool Partitioning
 
@@ -214,7 +215,7 @@ Rules:
 
 - Use only cryptographic hashes for object identity.
 - Record the hash algorithm in internal repository metadata.
-- Include object type and format domain separation in the hashed representation.
+- Use canonical logical bytes as the object hash input.
 - Store logical content size and object type in the object header.
 - Treat object equality as typed object identity, not as a bare hash string.
 - Recompute hashes during `verify`.
@@ -315,7 +316,7 @@ objects/
       abcdef...
 ```
 
-For data objects, the object ID should be derived from a typed logical content hash. For metadata objects, the object ID should be derived from a canonical typed metadata encoding. This keeps deduplication and metadata integrity stable even as the physical storage format evolves.
+For data objects, the object ID is derived from canonical file or chunk bytes. For metadata objects, the object ID is derived from canonical metadata bytes. This keeps deduplication and metadata integrity stable even as the physical storage format evolves.
 
 ### 3.4 Optional Encryption
 
@@ -341,7 +342,7 @@ The repository should store encrypted key material in `repository.meta`. After u
 
 ```text
 object-id-key = KDF(repository-master-key, "object-id")
-objectId = HMAC(object-id-key, objectType || logicalSize || contentHash)
+objectId = HMAC(object-id-key, contentHash)
 ```
 
 Do not implement object ID privacy as `hash(content || salt)` or `hash(salt || content)`. Use HMAC or a standard keyed hash mode, such as keyed BLAKE3, to avoid construction and length-extension pitfalls.
@@ -366,7 +367,7 @@ Encrypted object identity is computed before compression and encryption:
 ```text
 canonicalLogicalBytes
   -> contentHash = hash(canonicalLogicalBytes)
-  -> objectId = HMAC(object-id-key, objectType || logicalSize || contentHash)
+  -> objectId = HMAC(object-id-key, contentHash)
   -> compress canonicalLogicalBytes
   -> encrypt compressed payload
   -> object envelope
