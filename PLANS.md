@@ -85,21 +85,30 @@ Recommended physical layout:
 objects/
   data/
     ab/
-      cd/
-        <object-id>
+      <remaining-object-id>
   chunk/
     ab/
-      cd/
-        <object-id>
+      <remaining-object-id>
   snapshot/
     ab/
-      cd/
-        <object-id>
+      <remaining-object-id>
   tree/
     ab/
-      cd/
-        <object-id>
+      <remaining-object-id>
 ```
+
+Object paths use fixed one-level fanout:
+
+```text
+objects/<object-type>/<first-two-hex>/<remaining-hex>
+```
+
+Common patterns:
+
+- One-level fanout, such as `<first-two-hex>/<rest>`, is simple and used by systems such as Git loose objects.
+- Pack- or segment-based repositories reduce the need for deep fanout because many logical objects are stored inside larger physical files.
+
+The path builder should be centralized, but fanout is part of the repository format rather than a user-configurable setting.
 
 This is different from fully independent object pools. The object store remains one subsystem with shared rules for object envelopes, verification, synchronization, recovery records, and pruning.
 
@@ -591,8 +600,7 @@ repository/
   objects/
     data/
       ab/
-        cd/
-          abcdef...
+        cdef...
     chunk/
       ab/
     snapshot/
