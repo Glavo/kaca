@@ -11,6 +11,7 @@ This document records the initial architecture plan for `kaca`, an incremental b
 - Prioritize data reliability first, then optimize speed, storage efficiency, and user experience.
 - Use compressed object storage as part of the initial repository format.
 - Treat optional encryption and recovery records as first-class architecture concerns.
+- Reserve a manifest model for chunked large objects.
 - Leave room for future remote repositories, chunk-level deduplication, and scheduled jobs.
 
 ## 2. Non-Goals
@@ -170,7 +171,58 @@ For encrypted repositories, recovery records should protect encrypted physical f
 
 Recovery records should be optional and generated explicitly at first. Automatic recovery record generation can be added later after pruning and retention semantics are stable.
 
-### 3.6 Atomic Writes
+### 3.6 Large Object Chunking
+
+Large files should be representable as ordered chunk references in the snapshot manifest. A chunk should use the same object envelope format as a whole-file object.
+
+Recommended logical pipeline for large files:
+
+```text
+large-file -> chunk -> chunk-hash -> compress chunk -> encrypt chunk -> chunk-object
+```
+
+The file-level manifest should preserve the complete logical file identity and the ordered chunk list:
+
+```json
+{
+  "path": "images/disk.raw",
+  "type": "file",
+  "size": 107374182400,
+  "modifiedAt": "2026-05-27T01:00:00Z",
+  "object": {
+    "kind": "chunked",
+    "contentSize": 107374182400,
+    "chunker": {
+      "algorithm": "fastcdc",
+      "minSize": 1048576,
+      "avgSize": 4194304,
+      "maxSize": 16777216
+    },
+    "chunks": [
+      {
+        "id": "sha256:...",
+        "offset": 0,
+        "contentSize": 4194304,
+        "storedSize": 2097152,
+        "compression": "zstd",
+        "encryption": "none"
+      }
+    ]
+  }
+}
+```
+
+For unencrypted repositories, chunk IDs can be content hashes of logical chunk bytes. For encrypted repositories, chunk IDs should be keyed IDs derived from logical chunk hashes.
+
+The preferred long-term chunking strategy is content-defined chunking, such as FastCDC, because it preserves deduplication when bytes are inserted or removed near the beginning of a large file. Fixed-size chunking is simpler but performs poorly after insertions or shifts.
+
+Chunker parameters must be stored in the manifest or repository config. Changing chunker parameters changes deduplication behavior, so a repository should treat them as part of the object format profile.
+
+Each chunk should be compressed and encrypted independently. Do not compress a whole large file as one stream before chunking, because that would destroy chunk-level deduplication and make partial repair less useful.
+
+The first implementation may keep chunk objects as loose object files. A later pack format can group many small chunks into pack files without changing snapshot manifests, as long as chunk IDs remain stable.
+
+### 3.7 Atomic Writes
 
 Snapshot creation must not leave behind a half-successful snapshot.
 
@@ -184,7 +236,7 @@ Recommended write order:
 
 If the process is interrupted, the repository should be able to detect and clean temporary files through `repair` or `verify`.
 
-### 3.7 Verifiability
+### 3.8 Verifiability
 
 The repository must support integrity checks:
 
@@ -193,6 +245,7 @@ The repository must support integrity checks:
 - Object headers are parseable and compatible with the repository format.
 - Decompressed object content matches the logical content hash.
 - Encrypted object payloads authenticate successfully before decompression.
+- Chunked files restore to the expected file-level content hash.
 - Recovery records match the physical repository files they protect.
 - Indexes can be rebuilt from snapshots and objects.
 - Deleting old snapshots does not delete objects that are still referenced.
@@ -284,6 +337,8 @@ Fields to define later:
 - Extended attributes.
 - ACLs.
 - Case sensitivity policy.
+- Whole-file object references.
+- Chunked object references.
 
 ## 6. Main Modules
 
@@ -322,7 +377,19 @@ Suggested capabilities:
 - Progress reporting for large files.
 - Reserved interfaces for chunk hashing.
 
-### 6.4 ObjectStore
+### 6.4 Chunker
+
+Splits large files into stable logical chunks.
+
+Suggested capabilities:
+
+- Choose whether a file should be stored as a whole-file object or a chunked object.
+- Produce deterministic chunk boundaries from file content.
+- Record chunker parameters in manifests.
+- Stream chunks without loading the whole file into memory.
+- Support content-defined chunking in the long term.
+
+### 6.5 ObjectStore
 
 Writes, reads, and verifies content objects.
 
@@ -333,13 +400,14 @@ Suggested capabilities:
 - Store an object uncompressed when compression does not reduce size enough.
 - Write and parse object headers.
 - Encrypt and decrypt object private headers and payloads when repository encryption is enabled.
+- Store whole-file objects and chunk objects through the same envelope format.
 - Write objects through temporary files.
 - Verify the logical content hash after writing.
 - Authenticate encrypted payloads before decompression.
 - Atomically move objects into the `objects` directory.
 - Read and decompress objects for restore.
 
-### 6.5 Crypto
+### 6.6 Crypto
 
 Manages optional repository encryption.
 
@@ -352,7 +420,7 @@ Suggested capabilities:
 - Encrypt and decrypt snapshot manifests when full repository encryption is enabled.
 - Rotate or migrate encryption settings in a controlled future format upgrade.
 
-### 6.6 SnapshotStore
+### 6.7 SnapshotStore
 
 Writes, reads, lists, and verifies snapshot manifests.
 
@@ -364,7 +432,7 @@ Suggested capabilities:
 - Compare two snapshots.
 - Rebuild the object reference index from snapshots.
 
-### 6.7 Restore
+### 6.8 Restore
 
 Restores files from a snapshot.
 
@@ -375,8 +443,9 @@ Suggested capabilities:
 - Detect target path conflicts.
 - Support dry run.
 - Restore timestamps and basic permissions.
+- Restore chunked files by streaming ordered chunk objects.
 
-### 6.8 Verify
+### 6.9 Verify
 
 Checks repository integrity.
 
@@ -387,9 +456,10 @@ Suggested capabilities:
 - Verify manifest references.
 - Detect orphan objects.
 - Detect corrupted objects.
+- Verify chunk lists and chunk object references.
 - Verify recovery record sets.
 
-### 6.9 Prune
+### 6.10 Prune
 
 Deletes old snapshots according to retention policy and performs safe garbage collection.
 
@@ -401,7 +471,7 @@ Suggested capabilities:
 - Remove unreferenced objects.
 - Support dry run.
 
-### 6.10 RecoveryStore
+### 6.11 RecoveryStore
 
 Manages optional recovery records for repository files.
 
@@ -452,6 +522,7 @@ The first useful version should include:
 - Versioned object envelope format.
 - Repository format extension points for optional encryption.
 - Repository format extension points for optional recovery records.
+- Manifest format extension points for chunked large objects.
 - `init`.
 - `snapshot`.
 - `list`.
@@ -471,6 +542,8 @@ The MVP should not include:
 - Remote repositories.
 - Background scheduling.
 - GUI.
+
+Chunk-level deduplication can be implemented after the whole-file object flow is correct, but the manifest schema should not need a breaking redesign to support it.
 
 ## 9. Key Risks
 
@@ -543,6 +616,17 @@ Safe strategy:
 - Prefer rebuilding affected recovery sets instead of mutating them in place.
 - Never let recovery records act as the source of truth for object liveness.
 
+### 9.7 Chunker Parameter Drift
+
+Changing chunker parameters can reduce deduplication efficiency or create confusing mixed behavior.
+
+Safe strategy:
+
+- Store chunker algorithm and parameters with every chunked file entry.
+- Record the repository default chunker profile in `config.json`.
+- Allow reading old chunker profiles indefinitely.
+- Treat changes to default chunker parameters as an explicit repository configuration change.
+
 ## 10. Test Plan
 
 Basic test scenarios:
@@ -563,6 +647,9 @@ Basic test scenarios:
 - Verify that recovery records detect physical file corruption.
 - Verify that recovery records can repair a damaged protected file when enough redundancy is available.
 - Verify that external recovery records can be matched to the correct repository by repository ID.
+- Create a chunked large-file snapshot and restore it byte-for-byte.
+- Modify a large file in the middle and verify that unchanged chunks are reused.
+- Insert bytes near the beginning of a large file and compare fixed-size chunking with content-defined chunking.
 - Manually corrupt an object and confirm that `verify` detects it.
 - Delete an old snapshot without deleting objects that are still referenced.
 - Confirm that interrupted backups do not pollute the official repository state with temporary files.
@@ -581,6 +668,8 @@ Basic test scenarios:
 - Should recovery records protect every snapshot immediately or be generated in batches?
 - Should encrypted repositories encrypt recovery set manifests when recovery records are stored externally?
 - Should large file chunking use fixed-size chunks or rolling hash?
+- What large-file threshold should enable chunking by default?
+- Should loose chunk objects be packed after snapshot creation?
 - Is a database index such as SQLite needed?
 - Should Windows ACLs and Unix permissions be included in the first version?
 - Should exclude rules be compatible with `.gitignore` syntax?
@@ -600,4 +689,5 @@ Basic test scenarios:
 9. Add tests for crash recovery and integrity scenarios.
 10. Implement optional encryption.
 11. Implement optional recovery record creation, verification, and repair.
-12. Decide whether to add chunk-level deduplication.
+12. Implement chunked large-object storage.
+13. Decide whether to add object pack files for chunk-heavy repositories.
