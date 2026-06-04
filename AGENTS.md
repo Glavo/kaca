@@ -36,6 +36,7 @@ These rules apply to all Java code written or modified in this repository.
 - Documentation for Java record components must be written in the record class Javadoc with `@param` entries, not as inline comments before individual components.
 - Keep documentation accurate and specific to the actual behavior, constraints, and side effects.
 - Add concise implementation comments inside complex logic whenever they materially improve readability or explain non-obvious behavior.
+- Project documentation must describe architecture decisions, technical rationale, and implementation behavior directly. Do not include wording that refers to user prompts, conversation context, planning negotiations, or why a topic was raised in discussion.
 
 ## Gradle
 

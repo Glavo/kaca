@@ -1,6 +1,6 @@
 # Incremental Backup Architecture Plan
 
-This document records the initial architecture plan for `kaca`, an incremental backup tool for directory snapshots. The current phase focuses on architecture boundaries, data models, repository format, and the minimum useful feature set. The plan can be refined step by step as the design becomes clearer.
+This document describes the architecture plan for `kaca`, an incremental backup tool for directory snapshots. It defines architecture boundaries, data models, repository format, synchronization behavior, integrity guarantees, and implementation sequencing.
 
 ## 1. Design Goals
 
@@ -121,7 +121,7 @@ The chunk model extends the same object model for large files.
 
 ### 3.3 Compressed Object Envelope
 
-Because object compression is a core feature, the initial physical object format should be an envelope instead of raw file bytes.
+The physical object format is an envelope instead of raw file bytes so compression, encryption, and verification metadata can be represented consistently.
 
 The object file should contain:
 
@@ -207,7 +207,7 @@ object-envelope files + snapshot record files + config files -> recovery record 
 
 This allows recovery tools to repair corrupted encrypted objects without needing the encryption key.
 
-The first design should support PAR2-style recovery sets:
+The recovery record layout supports PAR2-style recovery sets:
 
 ```text
 recovery/
@@ -850,7 +850,7 @@ Implementation can be sliced without narrowing the architecture:
 
 ### 9.1 Source Files Change During Backup
 
-Initial strategy:
+Detection strategy:
 
 - Record size and modified time before reading a file.
 - Read the file.
@@ -948,7 +948,7 @@ Safe strategy:
 
 - Do not hard link mutable source files into `objects`.
 - Treat hard links as filesystem metadata to record and restore, not as a repository copy optimization.
-- Prefer verified normal copies for the initial implementation.
+- Prefer verified normal copies as the default import path.
 - Consider reflink or platform copy-on-write clone support as an optimized copy path with verified semantics.
 - Verify object content before making any optimized copy reachable.
 
