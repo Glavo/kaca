@@ -85,27 +85,29 @@ Recommended physical layout:
 objects/
   data/
     ab/
-      <remaining-object-id>
+      <object-id>
   chunk/
     ab/
-      <remaining-object-id>
+      <object-id>
   snapshot/
     ab/
-      <remaining-object-id>
+      <object-id>
   tree/
     ab/
-      <remaining-object-id>
+      <object-id>
 ```
+
+The object file name is the complete object ID. The fanout directory repeats the first two hex characters for directory distribution.
 
 Object paths use fixed one-level fanout:
 
 ```text
-objects/<object-type>/<first-two-hex>/<remaining-hex>
+objects/<object-type>/<first-two-hex>/<full-object-id>
 ```
 
 Common patterns:
 
-- One-level fanout, such as `<first-two-hex>/<rest>`, is simple and used by systems such as Git loose objects.
+- One-level fanout is simple and used by systems such as Git loose objects. Git stores the remaining hash in the file name; this repository keeps the complete object ID as the file name for easier inspection and validation.
 - Pack- or segment-based repositories reduce the need for deep fanout because many logical objects are stored inside larger physical files.
 
 The path builder should be centralized, but fanout is part of the repository format rather than a user-configurable setting.
@@ -600,7 +602,7 @@ repository/
   objects/
     data/
       ab/
-        cdef...
+        abcdef...
     chunk/
       ab/
     snapshot/
