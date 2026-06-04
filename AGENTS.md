@@ -40,7 +40,6 @@ These rules apply to all Java code written or modified in this repository.
 - When updating project documentation from a discussion, convert conclusions into direct requirements or design decisions. Do not copy explanatory comparison text from the conversation, such as "common patterns", "other systems usually do this", or "this repository chooses this because we discussed it", unless the document intentionally contains a sourced survey section.
 - Project documentation must be written as the target specification, not as a comparison against rejected alternatives. Avoid discussion-article structures such as `Benefits`, `Costs`, `Pros`, `Cons`, `Reasons`, and `Recommended` unless the document is explicitly a design review or trade-off analysis.
 - Prefer positive specification wording in project plans. Define the required layout, behavior, and invariants directly instead of writing rules as exclusions such as "must not use the alternative design", "not recommended", "instead of", or "rather than". Use negative wording only for essential safety, security, or correctness constraints that cannot be stated clearly as a positive rule.
-- Before finishing a project documentation update, scan the changed text for discussion artifacts such as `Benefits`, `Costs`, `Reasons`, `Common patterns`, `other systems`, `conversation`, `prompt`, `not recommended`, `instead of`, and `rather than`, then rewrite any accidental discussion residue into direct specification text.
 
 ## Gradle
 
