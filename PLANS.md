@@ -539,6 +539,36 @@ For unencrypted repositories, chunk IDs can be content hashes of logical chunk b
 
 The preferred long-term chunking strategy is content-defined chunking, such as FastCDC, because it preserves deduplication when bytes are inserted or removed near the beginning of a large file. Fixed-size chunking is simpler but performs poorly after insertions or shifts.
 
+Chunking implementation strategy:
+
+1. Stream the source file sequentially.
+2. Maintain a rolling or gear hash state for boundary detection.
+3. Do not cut a chunk before `minSize`.
+4. After `minSize`, cut a chunk when the boundary predicate matches the target average size.
+5. Force a cut at `maxSize`.
+6. Compute a cryptographic hash over the chunk bytes.
+7. Convert the chunk hash to an object ID.
+8. Write the chunk through the normal object pipeline.
+9. Append the chunk reference to the file manifest entry.
+
+The rolling or gear hash is only a boundary detector. It must never be used as object identity.
+
+Chunk buffering should be bounded by `maxSize`. A chunk can be buffered in memory when `maxSize` is modest, or spooled to a temporary file when memory limits require it.
+
+Chunk object write pipeline:
+
+```text
+chunk bytes
+  -> contentHash
+  -> objectId
+  -> compression
+  -> optional encryption
+  -> object envelope
+  -> loose object or pack
+```
+
+Encrypted repositories use the same chunk boundaries, but derive public chunk object IDs with the repository `object-id-key`.
+
 Chunker parameters must be stored in the manifest or internal repository metadata. Changing chunker parameters changes deduplication behavior, so a repository should treat them as part of the object format profile.
 
 Each chunk should be compressed and encrypted independently. Do not compress a whole large file as one stream before chunking, because that would destroy chunk-level deduplication and make partial repair less useful.
@@ -1221,6 +1251,8 @@ Basic test scenarios:
 - Verify that recovery records can repair a damaged protected file when enough redundancy is available.
 - Verify that external recovery records can be matched to the correct repository by repository ID.
 - Create a chunked large-file snapshot and restore it byte-for-byte.
+- Verify that chunk boundaries respect `minSize` and `maxSize`.
+- Verify that rolling hash state is used only for boundaries, not object identity.
 - Modify a large file in the middle and verify that unchanged chunks are reused.
 - Insert bytes near the beginning of a large file and compare fixed-size chunking with content-defined chunking.
 - Manually corrupt an object and confirm that `verify` detects it.
