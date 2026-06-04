@@ -192,14 +192,14 @@ Algorithms:
 
 For fixed-output variants, `output-bits` must equal the output bit length listed in the registry. For `blake3` and `blake3-keyed`, version 1 accepts `output-bits` values of 256, 384, and 512.
 
-Compression algorithms:
+### 2.5 Compression Algorithms
 
 | ID | Algorithm |
 |---:|---|
 | 0 | `none` |
 | 1 | `zstd` |
 
-Encryption algorithms:
+### 2.6 Encryption Algorithms
 
 | ID | Algorithm |
 |---:|---|
@@ -207,7 +207,7 @@ Encryption algorithms:
 | 1 | `xchacha20-poly1305` |
 | 2 | `aes-256-gcm` |
 
-Metadata encodings:
+### 2.7 Metadata Encodings
 
 | ID | Encoding |
 |---:|---|
