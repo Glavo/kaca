@@ -103,7 +103,7 @@ objectId = contentHash
 objectRef = objectType + objectId
 ```
 
-Using a bare content hash as `objectId` is acceptable because object references are typed. A unified object pool containing file data, chunks, snapshot metadata, tree metadata, and other typed objects must not use bare `objectId` alone as a reference.
+Using a bare content hash as `objectId` is acceptable because object references are typed. A unified object pool containing blobs, snapshot metadata, tree metadata, and other typed objects must not use bare `objectId` alone as a reference.
 
 `logicalSize` is validation metadata. It must be stored and checked, but it does not need to be part of the lookup key.
 
@@ -115,10 +115,7 @@ Recommended physical layout:
 
 ```text
 objects/
-  data/
-    ab/
-      <full-object-id>
-  chunk/
+  blob/
     ab/
       <full-object-id>
   snapshot/
@@ -146,14 +143,15 @@ Benefits:
 - Easier type-specific scanning.
 - Lower risk of accidental type confusion.
 - Different object types can use different packing strategies.
-- Snapshot and tree metadata can be managed separately from large data blobs.
+- Snapshot and tree metadata can be managed separately from large blobs.
 - Remote sync can transfer selected object classes when needed.
 
 Costs:
 
 - Slightly more complex paths.
 - Some operations must scan multiple partitions.
-- Cross-type byte-level deduplication is intentionally not used.
+- Byte-level deduplication is shared by whole-file blobs and chunk blobs.
+- Cross-type byte-level deduplication between blobs and metadata is intentionally not used.
 
 Fully independent pools with unrelated identity rules are not recommended because they make `verify`, `sync`, `prune`, and recovery records harder to reason about.
 
@@ -165,10 +163,7 @@ Recommended layout:
 
 ```text
 packs/
-  data/
-    <pack-id>.pack
-    <pack-id>.idx
-  chunk/
+  blob/
     <pack-id>.pack
     <pack-id>.idx
   metadata/
@@ -311,12 +306,12 @@ The object path should be derived from the object ID:
 
 ```text
 objects/
-  data/
+  blob/
     ab/
       abcdef...
 ```
 
-For data objects, the object ID is derived from canonical file or chunk bytes. For metadata objects, the object ID is derived from canonical metadata bytes. This keeps deduplication and metadata integrity stable even as the physical storage format evolves.
+For blob objects, the object ID is derived from canonical file bytes or canonical chunk bytes. For metadata objects, the object ID is derived from canonical metadata bytes. This keeps deduplication and metadata integrity stable even as the physical storage format evolves.
 
 ### 3.4 Optional Encryption
 
@@ -496,7 +491,7 @@ The remote layout can mirror the local repository layout, or it can use a provid
 
 ### 3.7 Large Object Chunking
 
-Large files should be representable as ordered chunk references in the snapshot manifest. A chunk should use the same object envelope format as a whole-file object.
+Large files should be representable as ordered chunk references in the snapshot manifest. A chunk should use the same `blob` object type as a whole-file object.
 
 Chunking must not change the logical identity of a file. A file's logical identity is based on its complete canonical file bytes, not on the chunk list used to store it.
 
@@ -507,7 +502,7 @@ fileContentHash = hash(complete-file-bytes)
 fileSize = complete-file-size
 ```
 
-The chunk list is a storage representation for that file. Changing chunker parameters may change chunk boundaries and chunk object references, but it must not change `fileContentHash` for identical file bytes.
+The chunk list is a storage representation for that file. Changing chunker parameters may change chunk boundaries and chunk blob references, but it must not change `fileContentHash` for identical file bytes.
 
 Recommended logical pipeline for large files:
 
@@ -579,15 +574,15 @@ chunk bytes
   -> loose object or pack
 ```
 
-Encrypted repositories use the same chunk boundaries, but derive public chunk object IDs with the repository `object-id-key`.
+Encrypted repositories use the same chunk boundaries, but derive public chunk blob object IDs with the repository `object-id-key`.
 
 Chunker parameters must be stored in the manifest or internal repository metadata. Changing chunker parameters changes deduplication behavior, so a repository should treat them as part of the object format profile.
 
 Each chunk should be compressed and encrypted independently. Do not compress a whole large file as one stream before chunking, because that would destroy chunk-level deduplication and make partial repair less useful.
 
-Loose chunk objects are a valid implementation slice. A pack format can group many small chunks into pack files without changing snapshot manifests, as long as chunk IDs remain stable.
+Loose blob objects are a valid implementation slice. A pack format can group many small chunk blobs into pack files without changing snapshot manifests, as long as chunk IDs remain stable.
 
-Chunk-level deduplication is important for large mutable files and belongs in the architecture baseline. Its implementation can follow once whole-file objects, snapshot objects, restore, `verify`, and `prune` are reliable.
+Chunk-level deduplication is important for large mutable files and belongs in the architecture baseline. Its implementation can follow once whole-file blob references, snapshot objects, restore, `verify`, and `prune` are reliable.
 
 It is most valuable for:
 
@@ -608,7 +603,7 @@ The repository format should reserve chunked object support from the beginning. 
 
 ### 3.8 Snapshot Metadata as Objects
 
-Snapshot contents should be committed as typed metadata objects in the same repository object store used by file and chunk objects.
+Snapshot contents should be committed as typed metadata objects in the same repository object store used by blob objects.
 
 The `snapshots` directory should store mutable snapshot records, not full manifest bodies:
 
@@ -636,7 +631,7 @@ A snapshot record points to the actual immutable snapshot object and may also co
 }
 ```
 
-The snapshot object payload contains the snapshot manifest. This gives snapshot metadata the same benefits as data objects:
+The snapshot object payload contains the snapshot manifest. This gives snapshot metadata the same storage guarantees as blob objects:
 
 - Compression.
 - Optional encryption.
@@ -764,10 +759,7 @@ repository/
   config.toml
   lock
   objects/
-    data/
-      ab/
-        abcdef...
-    chunk/
+    blob/
       ab/
         abcdef...
     snapshot/
@@ -777,8 +769,7 @@ repository/
       ab/
         abcdef...
   packs/
-    data/
-    chunk/
+    blob/
     metadata/
   snapshots/
     2026-05-27T01-30-00Z-<id>.json
@@ -906,7 +897,7 @@ Splits large files into stable logical chunks.
 
 Suggested capabilities:
 
-- Choose whether a file should be stored as a whole-file object or a chunked object.
+- Choose whether a file should be stored as a single blob reference or a chunked blob reference list.
 - Produce deterministic chunk boundaries from file content.
 - Record chunker parameters in manifests.
 - Stream chunks without loading the whole file into memory.
@@ -923,7 +914,7 @@ Suggested capabilities:
 - Store an object uncompressed when compression does not reduce size enough.
 - Write and parse object headers.
 - Encrypt and decrypt object private headers and payloads when repository encryption is enabled.
-- Store whole-file objects, chunk objects, and snapshot metadata objects through the same envelope format.
+- Store blob objects and snapshot metadata objects through the same envelope format.
 - Write objects through temporary files.
 - Verify the logical content hash after writing.
 - Authenticate encrypted payloads before decompression.
@@ -939,7 +930,7 @@ Suggested capabilities:
 - Select loose objects for packing.
 - Write temporary pack files and indexes.
 - Publish packs atomically.
-- Resolve object keys to pack offsets.
+- Resolve object references to pack offsets.
 - Read object envelopes from packs.
 - Verify pack indexes against pack contents.
 - Repack live objects during pruning.
@@ -984,7 +975,7 @@ Suggested capabilities:
 - Detect target path conflicts.
 - Support dry run.
 - Restore timestamps and basic permissions.
-- Restore chunked files by streaming ordered chunk objects.
+- Restore chunked files by streaming ordered blob objects.
 
 ### 6.10 Verify
 
@@ -997,7 +988,7 @@ Suggested capabilities:
 - Verify manifest references.
 - Detect orphan objects.
 - Detect corrupted objects.
-- Verify chunk lists and chunk object references.
+- Verify chunk lists and blob object references.
 - Verify recovery record sets.
 
 ### 6.11 Prune
@@ -1081,8 +1072,7 @@ The architecture baseline includes:
 
 - Local and remote repositories.
 - Typed object envelopes.
-- Whole-file objects.
-- Chunk objects.
+- Blob objects for whole files and chunks.
 - Snapshot metadata objects.
 - Mutable snapshot records.
 - Compression.
@@ -1292,7 +1282,7 @@ Basic test scenarios:
 - Should encrypted repositories encrypt recovery set manifests when recovery records are stored externally?
 - Should large file chunking use fixed-size chunks or rolling hash?
 - What large-file threshold should enable chunking by default?
-- Should loose chunk objects be packed after snapshot creation?
+- Should loose blob objects be packed after snapshot creation?
 - What pattern syntax should sparse restore use?
 - Should long-lived sparse checkout state be stored in the target directory or in the repository?
 - Is a database index such as SQLite needed?
