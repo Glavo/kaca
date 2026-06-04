@@ -63,6 +63,33 @@ Conceptually:
 objectId = hash("kaca-object-v1" || objectType || canonicalLogicalBytes)
 ```
 
+#### Hash Collision Policy
+
+Hash collisions are not expected with modern cryptographic hashes, but the repository must define how object identity is verified and what happens if a collision-like inconsistency is detected.
+
+Rules:
+
+- Use only cryptographic hashes for object identity.
+- Record the hash algorithm in repository config and object metadata.
+- Include object type and format domain separation in the hashed representation.
+- Store logical content size and object type in the object header.
+- Recompute hashes during `verify`.
+- Treat rolling hashes used by chunkers as boundary detectors only, never as object identity.
+- Never silently accept two different logical payloads with the same object ID.
+
+When adding an object whose ID already exists:
+
+- Check that object type, logical size, and hash algorithm match.
+- In normal mode, trust the cryptographic object ID after header validation.
+- In high-assurance mode, read the existing object and compare logical bytes before reusing it.
+
+If a collision or corruption is detected:
+
+- Stop the operation.
+- Mark the object as suspicious.
+- Do not overwrite the existing object.
+- Require repair, migration, or a stronger hash strategy before continuing.
+
 The baseline object model supports file-level deduplication:
 
 - Hash small and regular files as whole files.
@@ -936,6 +963,8 @@ Basic test scenarios:
 - Restore only selected paths and verify that unrelated paths are not materialized.
 - Restore with include and exclude patterns.
 - Verify that duplicate files store only one object.
+- Verify that existing-object reuse checks object type, logical size, and hash algorithm.
+- Verify that high-assurance mode compares logical bytes before reusing an existing object.
 - Verify that compressed objects restore to the original content.
 - Verify that object headers and payloads are checked by `verify`.
 - Verify that objects remain self-describing without sidecar metadata files.
@@ -954,6 +983,7 @@ Basic test scenarios:
 ## 11. Open Research Questions
 
 - Should the default hash algorithm be `SHA-256` or `BLAKE3`?
+- Should high-assurance mode store or verify a secondary hash?
 - Should immutable metadata use canonical CBOR, deterministic Protocol Buffers, or a custom binary format?
 - What canonical encoding should be used for metadata object IDs?
 - Should very large snapshot manifests become tree-style metadata objects?
