@@ -13,21 +13,31 @@ This document records the initial architecture plan for `kaca`, an incremental b
 - Treat optional encryption and recovery records as first-class architecture concerns.
 - Reserve a manifest model for chunked large objects.
 - Support sparse restore and leave room for long-lived sparse checkout worktrees.
-- Leave room for future remote repositories, chunk-level deduplication, and scheduled jobs.
+- Include remote repositories, synchronization, chunk-level deduplication, and scheduled jobs in the initial architecture scope.
 
-## 2. Non-Goals
+## 2. Architecture Scope and Implementation Phasing
 
-The first phase should not target these capabilities:
+The architecture should account for the full product shape from the beginning, even when implementation is delivered in smaller slices.
 
-- GUI.
-- Cloud sync or remote repositories.
-- Filesystem-level consistency snapshots such as Windows VSS, btrfs, zfs, or lvm.
-- Chunk-level deduplication.
-- Long-lived sparse checkout state.
-- Multiple clients writing to the same repository concurrently.
-- Complex schedulers or background services.
+Architecture scope includes:
 
-These capabilities can be added after the core repository format and restore flow are stable. Encryption and recovery records do not need to block the first usable snapshot flow, but the initial repository and object formats must reserve explicit extension points for them.
+- Local repositories.
+- Remote repositories and synchronization.
+- Immutable object storage.
+- Mutable snapshot records.
+- Compression.
+- Optional encryption.
+- Recovery records.
+- Chunked large-object storage.
+- Sparse restore and sparse checkout.
+- Retention and pruning.
+- Repository verification and repair.
+- Scheduling and background operation.
+- Filesystem-level consistency integrations.
+- GUI and service interfaces.
+- Multi-client conflict handling.
+
+Implementation can still be staged. The plan must distinguish architecture coverage from implementation order.
 
 ## 3. Core Principles
 
@@ -45,13 +55,13 @@ The object identity is based on the logical uncompressed content. Physical objec
 
 Metadata objects, such as snapshot manifests, should also use the object store, but their IDs must be domain-separated from file content objects. A snapshot object ID should be computed from its canonical typed metadata body, not from file content bytes.
 
-The initial version should use file-level deduplication:
+The baseline object model supports file-level deduplication:
 
 - Hash small and regular files as whole files.
 - If the object already exists, reference it from the manifest.
 - If the object does not exist, write it into the object store.
 
-A chunk model can be introduced later for large files.
+The chunk model extends the same object model for large files.
 
 ### 3.3 Compressed Object Envelope
 
@@ -91,7 +101,7 @@ In an encrypted repository, public headers must not expose logical content hashe
 
 The payload may be stored uncompressed when compression is disabled for that object or when compression does not reduce size enough. The header must explicitly record that decision.
 
-The repository should not hard link mutable source files directly into the object store. A hard link shares the same underlying file data; if the original file is modified in place later, the backup object would change as well. That violates snapshot immutability.
+The repository should not hard link mutable source files directly into the object store. A hard link shares the same underlying file data; if the original file is modified in place after import, the backup object would change as well. That violates snapshot immutability.
 
 Future copy optimizations should prefer safe copy-on-write clone mechanisms, such as reflink or platform block cloning, when available. Any optimized copy path must still verify the resulting object before making it reachable.
 
@@ -105,7 +115,7 @@ objects/
         abcdef...
 ```
 
-For data objects, the object ID should be derived from the logical content hash. For metadata objects, the object ID should be derived from a canonical typed metadata encoding. This keeps deduplication and metadata integrity stable even if the physical storage format changes later.
+For data objects, the object ID should be derived from the logical content hash. For metadata objects, the object ID should be derived from a canonical typed metadata encoding. This keeps deduplication and metadata integrity stable even as the physical storage format evolves.
 
 ### 3.4 Optional Encryption
 
@@ -191,9 +201,56 @@ External recovery records are useful when the repository itself is stored on a d
 
 For encrypted repositories, recovery records should protect encrypted physical files. The PAR2 payload does not need the encryption key to repair damaged bytes. However, recovery set manifests and file names may still leak repository layout and object sizes, so a future encrypted recovery manifest mode may be needed.
 
-Recovery records should be optional and generated explicitly at first. Automatic recovery record generation can be added later after pruning and retention semantics are stable.
+Recovery records can be generated explicitly before automatic recovery scheduling is implemented. Automatic recovery record generation depends on stable pruning and retention semantics.
 
-### 3.6 Large Object Chunking
+### 3.6 Remote Repositories and Synchronization
+
+Remote synchronization should be designed as transport for repository state, not as a separate backup format.
+
+The remote model should handle:
+
+- Immutable typed objects.
+- Mutable snapshot records.
+- Optional recovery record sets.
+- Rebuildable indexes.
+- Repository configuration and format negotiation.
+
+Immutable objects are content-addressed and can be synchronized by object ID:
+
+```text
+local object IDs - remote object IDs = missing objects
+upload missing objects
+download missing objects
+verify object hashes
+```
+
+Mutable snapshot records need conflict handling because users may edit notes, tags, pins, or retention hints from multiple clients.
+
+Recommended conflict strategy:
+
+- Keep immutable snapshot objects conflict-free.
+- Version mutable snapshot records with `updatedAt` and a record revision.
+- Detect concurrent edits instead of silently overwriting them.
+- Resolve conflicts field-by-field when possible.
+- Preserve conflicting records as explicit conflict copies when automatic merge is unsafe.
+
+Remote repositories may be trusted or untrusted. For untrusted remotes:
+
+- Object payloads should be encrypted before upload.
+- Snapshot object metadata should be encrypted in full repository encryption mode.
+- Mutable snapshot records may also need encryption.
+- Remote providers should not need plaintext keys to store, list, or transfer repository files.
+
+Remote synchronization should support resumable transfer:
+
+- Upload and download temporary files.
+- Commit files atomically on the remote when the provider supports it.
+- Verify size and hash after transfer.
+- Avoid relying on remote indexes as the source of truth.
+
+The remote layout can mirror the local repository layout, or it can use a provider-specific API. The logical sync protocol should still be based on repository IDs, object IDs, snapshot record IDs, and recovery set IDs.
+
+### 3.7 Large Object Chunking
 
 Large files should be representable as ordered chunk references in the snapshot manifest. A chunk should use the same object envelope format as a whole-file object.
 
@@ -242,9 +299,28 @@ Chunker parameters must be stored in the manifest or repository config. Changing
 
 Each chunk should be compressed and encrypted independently. Do not compress a whole large file as one stream before chunking, because that would destroy chunk-level deduplication and make partial repair less useful.
 
-The first implementation may keep chunk objects as loose object files. A later pack format can group many small chunks into pack files without changing snapshot manifests, as long as chunk IDs remain stable.
+Loose chunk objects are a valid implementation slice. A pack format can group many small chunks into pack files without changing snapshot manifests, as long as chunk IDs remain stable.
 
-### 3.7 Snapshot Metadata as Objects
+Chunk-level deduplication is important for large mutable files and belongs in the architecture baseline. Its implementation can follow once whole-file objects, snapshot objects, restore, `verify`, and `prune` are reliable.
+
+It is most valuable for:
+
+- VM images.
+- Disk images.
+- Large database dumps.
+- Large project files with localized edits.
+- Large binary files that are rewritten with small internal changes.
+
+It is less valuable for:
+
+- Small source files.
+- Already compressed media.
+- Files that are replaced entirely with unrelated content.
+- Workloads where file-level deduplication already captures most reuse.
+
+The repository format should reserve chunked object support from the beginning. Chunk-level deduplication can then be implemented without changing the snapshot record model.
+
+### 3.8 Snapshot Metadata as Objects
 
 Snapshot contents should be committed as typed metadata objects in the same repository object store used by file and chunk objects.
 
@@ -305,7 +381,7 @@ Mutable records may include:
 
 Updating mutable metadata must not create a new snapshot object and must not change the snapshot object ID.
 
-The initial implementation can store one snapshot manifest as one snapshot object. A later tree-style metadata model can split very large manifests into reusable directory metadata objects without changing the snapshot record model.
+One implementation slice can store one snapshot manifest as one snapshot object. A tree-style metadata model can split very large manifests into reusable directory metadata objects without changing the snapshot record model.
 
 Snapshot object payloads should not use plain JSON as the long-term storage format. JSON examples in this document are schema illustrations only.
 
@@ -323,11 +399,11 @@ The object ID for a metadata object should be computed from the canonical uncomp
 
 Mutable snapshot records outside the object pool may use JSON because they are user-editable catalog data, not content-addressed immutable metadata.
 
-### 3.8 Sparse Restore and Checkout
+### 3.9 Sparse Restore and Checkout
 
 The snapshot model should support sparse restore: restoring only selected paths or path patterns from a snapshot.
 
-MVP sparse behavior can be implemented by loading the snapshot manifest and filtering entries:
+Simple sparse behavior can be implemented by loading the snapshot manifest and filtering entries:
 
 ```text
 kaca restore <snapshot-id> <target> --path docs/readme.md
@@ -350,7 +426,7 @@ Long-lived sparse checkout should be treated as a separate feature from one-shot
 .kaca-checkout.json
 ```
 
-Possible future commands:
+Checkout commands:
 
 ```text
 kaca checkout <snapshot-id> <target> --sparse <spec>
@@ -361,7 +437,7 @@ kaca checkout list
 
 Sparse checkout state must not become a repository reachability root unless the user explicitly pins the snapshot. Otherwise, a local checkout could accidentally prevent expected pruning.
 
-### 3.9 Atomic Writes
+### 3.10 Atomic Writes
 
 Snapshot creation must not leave behind a half-successful snapshot.
 
@@ -376,7 +452,7 @@ Recommended write order:
 
 If the process is interrupted, the repository should be able to detect and clean temporary files through `repair` or `verify`.
 
-### 3.10 Verifiability
+### 3.11 Verifiability
 
 The repository must support integrity checks:
 
@@ -425,7 +501,7 @@ Notes:
 - `recovery` stores optional recovery record sets.
 - `tmp` stores incomplete temporary writes.
 
-Indexes can be simple in the first phase. They should be rebuildable from snapshot records and objects when needed.
+Indexes can remain rebuildable from snapshot records and objects when needed.
 
 The initial object format should be:
 
@@ -438,7 +514,7 @@ header
 payload
 ```
 
-The exact binary encoding can be decided later, but the header must be small, deterministic, and independent of snapshot records. This allows individual object files to be verified even when indexes are missing.
+The exact binary encoding is an implementation decision, but the header must be small, deterministic, and independent of snapshot records. This allows individual object files to be verified even when indexes are missing.
 
 ## 5. Snapshot Object Draft
 
@@ -473,7 +549,7 @@ The example below is JSON for readability. The stored snapshot object should use
 }
 ```
 
-Fields to define later:
+Additional fields to define:
 
 - Directory entries.
 - Symbolic link entries.
@@ -632,12 +708,29 @@ Suggested capabilities:
 - Track which snapshots, objects, and metadata files are protected by each recovery set.
 - Coordinate with `prune` so recovery records do not reference deleted repository files indefinitely.
 
+### 6.12 RemoteStore
+
+Manages remote repository synchronization.
+
+Suggested capabilities:
+
+- Configure remote endpoints.
+- List remote object IDs.
+- Upload missing immutable objects.
+- Download missing immutable objects.
+- Upload and download mutable snapshot records with conflict detection.
+- Synchronize recovery record sets.
+- Verify transferred files by size and hash.
+- Support resumable uploads and downloads.
+- Keep remote indexes rebuildable and non-authoritative.
+
 ## 7. CLI Draft
 
-The first phase should provide a CLI:
+The CLI surface should cover the architecture scope, while individual commands can be implemented incrementally:
 
 ```text
 kaca init <repository>
+kaca init <repository> --encrypt
 kaca snapshot <source> --repo <repository>
 kaca list --repo <repository>
 kaca show <snapshot-id> --repo <repository>
@@ -647,18 +740,17 @@ kaca restore <snapshot-id> <target> --repo <repository> --path <path>
 kaca restore <snapshot-id> <target> --repo <repository> --include <pattern> --exclude <pattern>
 kaca verify --repo <repository>
 kaca prune --repo <repository> --keep-daily 7 --keep-weekly 4
-```
-
-Future commands:
-
-```text
-kaca init <repository> --encrypt
 kaca stats --repo <repository>
 kaca repair --repo <repository>
 kaca recovery create --repo <repository> --redundancy 10
 kaca recovery create --repo <repository> --redundancy 10 --output <recovery-directory>
 kaca recovery verify --repo <repository>
 kaca recovery repair --repo <repository>
+kaca remote add <name> <url>
+kaca remote list --repo <repository>
+kaca sync push <remote> --repo <repository>
+kaca sync pull <remote> --repo <repository>
+kaca sync verify <remote> --repo <repository>
 kaca checkout <snapshot-id> <target> --repo <repository> --sparse <spec>
 kaca checkout add <path>
 kaca checkout remove <path>
@@ -667,39 +759,36 @@ kaca mount <snapshot-id> --repo <repository>
 kaca serve --repo <repository>
 ```
 
-## 8. MVP Scope
+## 8. Architecture Baseline and Implementation Slices
 
-The first useful version should include:
+The architecture baseline includes:
 
-- Local repository.
-- File-level deduplication.
-- Object compression.
-- Versioned object envelope format.
-- Repository format extension points for optional encryption.
-- Repository format extension points for optional recovery records.
-- Manifest format extension points for chunked large objects.
-- `init`.
-- `snapshot`.
-- `list`.
-- `diff`.
-- `restore`.
-- Sparse restore for selected paths.
-- `verify`.
-- Basic exclude rules.
-- Atomic writes.
-- Repository lock.
-- Basic test coverage.
+- Local and remote repositories.
+- Typed object envelopes.
+- Whole-file objects.
+- Chunk objects.
+- Snapshot metadata objects.
+- Mutable snapshot records.
+- Compression.
+- Optional encryption.
+- Recovery records.
+- Sparse restore and sparse checkout.
+- Retention and pruning.
+- Verification and repair.
+- Remote synchronization.
+- Scheduling and service integration.
+- GUI integration points.
 
-The MVP should not include:
+Implementation can be sliced without narrowing the architecture:
 
-- Mandatory encryption.
-- Automated recovery record scheduling.
-- Chunk-level deduplication.
-- Remote repositories.
-- Background scheduling.
-- GUI.
-
-Chunk-level deduplication can be implemented after the whole-file object flow is correct, but the manifest schema should not need a breaking redesign to support it.
+- Repository format, object envelope, and local object storage.
+- Snapshot creation, listing, diff, restore, and sparse restore.
+- Verification, repair, pruning, and recovery record generation.
+- Optional encryption and encrypted metadata.
+- Remote repository synchronization.
+- Chunk-level deduplication and pack files.
+- Long-lived sparse checkout state.
+- Scheduling, service mode, and GUI.
 
 ## 9. Key Risks
 
@@ -713,7 +802,7 @@ Initial strategy:
 - If the file changed, retry once.
 - If the file remains unstable, record it as a failed entry and make the `snapshot` command return a non-zero status or explicit warning.
 
-Filesystem-level consistency snapshots can be supported later.
+Filesystem-level consistency snapshots are a dedicated integration area in the architecture baseline.
 
 ### 9.2 Pruning Deletes Referenced Objects
 
@@ -804,8 +893,21 @@ Safe strategy:
 - Do not hard link mutable source files into `objects`.
 - Treat hard links as filesystem metadata to record and restore, not as a repository copy optimization.
 - Prefer verified normal copies for the initial implementation.
-- Consider reflink or platform copy-on-write clone support later.
+- Consider reflink or platform copy-on-write clone support as an optimized copy path with verified semantics.
 - Verify object content before making any optimized copy reachable.
+
+### 9.10 Remote Sync Conflicts
+
+Immutable objects are conflict-free because they are addressed by object ID. Mutable snapshot records are not conflict-free by default.
+
+Safe strategy:
+
+- Detect concurrent edits to mutable snapshot records.
+- Keep record revisions and `updatedAt` timestamps.
+- Merge independent fields when possible.
+- Preserve explicit conflict copies when automatic merge is unsafe.
+- Never let a remote index override local object reachability without verification.
+- Treat remote storage as untrusted unless explicitly configured otherwise.
 
 ## 10. Test Plan
 
@@ -864,7 +966,7 @@ Basic test scenarios:
 - What pattern syntax should sparse restore use?
 - Should long-lived sparse checkout state be stored in the target directory or in the repository?
 - Is a database index such as SQLite needed?
-- Should Windows ACLs and Unix permissions be included in the first version?
+- How should Windows ACLs and Unix permissions be represented in the architecture baseline?
 - Should exclude rules be compatible with `.gitignore` syntax?
 - Should restore overwrite target files by default?
 - Should `snapshot` fail, skip, or produce a partial snapshot when it sees unstable files?
