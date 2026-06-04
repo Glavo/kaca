@@ -70,10 +70,12 @@ Recommended distinction:
 ```text
 contentHash = hash(canonicalLogicalBytes)
 objectId = hash("kaca-object-v1" || objectType || canonicalLogicalBytes)
-objectKey = objectType + logicalSize + objectId
+objectRef = objectType + objectId
 ```
 
-Using a bare hash as the only object ID is acceptable only in a store that contains one semantic object class. A unified object pool containing file data, chunks, snapshot metadata, tree metadata, and other typed objects should use typed object IDs or an equivalent typed composite key.
+Using a bare hash as the only object ID is acceptable only in a store that contains one semantic object class. A unified object pool containing file data, chunks, snapshot metadata, tree metadata, and other typed objects should use typed object IDs and typed object references.
+
+`logicalSize` is validation metadata. It must be stored and checked, but it does not need to be part of the lookup key when `objectId` already includes the object type domain.
 
 #### Object Pool Partitioning
 
@@ -149,10 +151,10 @@ packs/
     <pack-id>.idx
 ```
 
-A pack file stores object records. The pack index maps each logical object key to its physical location:
+A pack file stores object records. The pack index maps each object reference to its physical location:
 
 ```text
-objectKey -> packId + offset + storedSize
+objectRef -> packId + offset + storedSize
 ```
 
 The simplest pack record stores the same object envelope bytes used by loose objects:
@@ -190,7 +192,7 @@ Rules:
 - Record the hash algorithm in repository config.
 - Include object type and format domain separation in the hashed representation.
 - Store logical content size and object type in the object header.
-- Treat object equality as a composite logical identity, not as a bare hash string.
+- Treat object equality as typed object identity, not as a bare hash string.
 - Recompute hashes during `verify`.
 - Treat rolling hashes used by chunkers as boundary detectors only, never as object identity.
 - Never silently accept two different logical payloads with the same object ID.
@@ -198,20 +200,22 @@ Rules:
 The logical object identity should be:
 
 ```text
-objectKey = objectType + logicalSize + objectId
+objectRef = objectType + objectId
 ```
 
-Two objects are the same logical object only when all parts of `objectKey` match. If any part differs, they are different objects.
+Two objects are the same logical object only when all parts of `objectRef` match. If any part differs, they are different objects.
 
 Compression algorithm, encryption mode, payload size, and storage location are physical storage properties. They should not define logical object equality.
 
-Including `objectType` and `logicalSize` in the equality key does not replace cryptographic collision resistance. It mainly provides:
+Including `objectType` in the equality key does not replace cryptographic collision resistance. It mainly provides:
 
 - Fast mismatch detection.
 - Stronger type-safety.
 - Better index semantics.
 - Better corruption diagnostics.
 - Protection against accidental bare-hash reuse across object classes.
+
+`logicalSize` remains required validation metadata and must be checked before object reuse and during `verify`.
 
 For same-type, same-size collision concerns, use a stronger hash, a secondary hash, or high-assurance byte comparison.
 
@@ -1128,7 +1132,8 @@ Basic test scenarios:
 - Verify that duplicate files store only one object.
 - Verify that object scanning covers every typed object partition.
 - Verify that existing-object reuse checks object type, logical size, and repository hash compatibility.
-- Verify that bare matching hashes are not enough when type or logical size differs.
+- Verify that bare matching hashes are not enough when object type differs.
+- Verify that logical size mismatches fail validation.
 - Verify that high-assurance mode compares logical bytes before reusing an existing object.
 - Verify that compressed objects restore to the original content.
 - Verify that object headers and payloads are checked by `verify`.
