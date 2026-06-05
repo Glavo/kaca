@@ -2,7 +2,7 @@
 
 This document defines the user-editable configuration files used by `kaca`.
 
-Repository identity, object identity, digest profiles, object layout, canonical compression profile, encryption mode, and repository format versions are stored in `repository.meta`. Configuration files store policy, defaults, local client settings, remote endpoints, and job definitions.
+Repository identity, object identity, digest profiles, object layout, canonical compression profile, encryption mode, and repository format versions are stored in `repository`. Configuration files store policy, defaults, local client settings, remote endpoints, and job definitions.
 
 ## 1. Configuration Layers
 

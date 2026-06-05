@@ -46,7 +46,7 @@ Implementation can still be staged. The plan must distinguish architecture cover
 
 Repository metadata and user-editable configuration are separate concerns.
 
-`repository.meta` is internal binary metadata managed by the program. It stores stable repository identity and format data:
+`repository` is internal binary metadata managed by the program. It stores stable repository identity and format data:
 
 - Repository ID.
 - Repository format version.
@@ -372,7 +372,7 @@ Encrypted repository model:
 
 Object ID privacy uses a secret repository-derived key. Public KDF salts are used only for password-derived key uniqueness.
 
-The repository should store encrypted key material in `repository.meta`. After unlock, the key hierarchy derives an `object-id-key` used only for object identity:
+The repository should store encrypted key material in `repository`. After unlock, the key hierarchy derives an `object-id-key` used only for object identity:
 
 ```text
 object-id-key = KDF(repository-master-key, "object-id")
@@ -390,7 +390,7 @@ Compression precedes encryption in every encrypted object pipeline.
 
 The compression profile is part of the repository storage format:
 
-- Store the canonical compression profile in `repository.meta`.
+- Store the canonical compression profile in `repository`.
 - Use deterministic compression settings for object payloads.
 - Keep the compression profile independent from user-editable `config.toml` changes.
 - If the compression profile changes, treat it as a repository migration or repack operation.
@@ -840,7 +840,7 @@ A local repository can use this layout:
 
 ```text
 repository/
-  repository.meta
+  repository
   config.toml
   lock
   local/
@@ -865,7 +865,7 @@ repository/
 
 Notes:
 
-- `repository.meta` stores binary internal metadata such as repository ID, repository format version, object format version, hash algorithm, metadata encoding, canonical compression profile, object layout, encryption mode, key derivation public parameters, and creation time.
+- `repository` stores binary internal metadata such as repository ID, repository format version, object format version, hash algorithm, metadata encoding, canonical compression profile, object layout, encryption mode, key derivation public parameters, and creation time.
 - `config.toml` stores repository policy such as retention defaults, recovery record defaults, repository metadata capture defaults, and extension policy.
 - `local/config.toml` stores client-local configuration such as remotes, credential references, restore defaults, service settings, and UI preferences.
 - `jobs` stores repeatable snapshot job definitions such as source paths, schedules, filters, and per-job capture overrides.
@@ -879,7 +879,7 @@ Notes:
 
 Indexes can remain rebuildable from snapshot records and objects when needed.
 
-The concrete binary formats for `repository.meta`, object envelopes, structured payloads, pack files, and pack indexes are defined in `docs/repository-format.md`.
+The concrete binary formats for `repository`, object envelopes, structured payloads, pack files, and pack indexes are defined in `docs/repository-format.md`.
 
 The concrete layered configuration schema is defined in `docs/configuration.md`.
 
@@ -1216,7 +1216,7 @@ Safe strategy:
 
 ### 9.3 Repository Format Upgrades
 
-Both `repository.meta` and structured metadata payload formats must record `formatVersion`.
+Both `repository` and structured metadata payload formats must record `formatVersion`.
 
 When a newer program opens an older repository, it must clearly decide:
 
@@ -1267,7 +1267,7 @@ Changing chunker parameters can reduce deduplication efficiency or create confus
 Safe strategy:
 
 - Store chunker algorithm and parameters with every chunked file entry.
-- Record the repository default chunker profile in `repository.meta`.
+- Record the repository default chunker profile in `repository`.
 - Allow reading old chunker profiles indefinitely.
 - Treat changes to default chunker parameters as an explicit repository configuration change.
 

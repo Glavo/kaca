@@ -213,12 +213,12 @@ For fixed-output variants, `output-bits` must equal the output bit length listed
 |---:|---|
 | 1 | `deterministic-cbor-v1` |
 
-## 3. `repository.meta`
+## 3. `repository`
 
-`repository.meta` is an internal binary file managed by the program.
+`repository` is an internal binary file managed by the program.
 
 ```text
-repository-meta :=
+repository-file :=
   fixed-header
   extension-header
   deterministic-cbor-body
@@ -229,8 +229,8 @@ Fixed header:
 
 | Offset | Size | Field |
 |---:|---:|---|
-| 0 | 8 | magic: `KACAMET1` |
-| 8 | 2 | repository meta format version |
+| 0 | 8 | magic: `KACAREP1` |
+| 8 | 2 | repository file format version |
 | 10 | 2 | flags |
 | 12 | 4 | header length |
 | 16 | 8 | body length |
@@ -241,7 +241,7 @@ Fixed header:
 
 The checksum is computed over `fixed-header + extension-header + deterministic-cbor-body`.
 
-Repository meta body:
+Repository file body:
 
 | Key | Type | Field |
 |---:|---|---|
