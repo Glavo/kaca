@@ -33,7 +33,7 @@ Architecture scope includes:
 - Filesystem metadata capture and restore profiles.
 - Retention and pruning.
 - Repository verification and repair.
-- Internal binary repository metadata.
+- Internal binary `repository` file.
 - Layered user-editable configuration.
 - Scheduling and background operation.
 - Filesystem-level consistency integrations.
@@ -250,7 +250,7 @@ The repository defines how object identity is verified and how collision-like in
 Rules:
 
 - Use only cryptographic hashes for object identity.
-- Record the hash algorithm in internal repository metadata.
+- Record the hash algorithm in the `repository` file.
 - Use canonical logical bytes as the object hash input.
 - Store logical content size in the object header.
 - Treat object equality as byte identity by object ID.
@@ -424,7 +424,7 @@ Recovery records protect the physical repository bytes.
 The recovery layer should operate after compression and encryption:
 
 ```text
-object-envelope files + pack files + snapshot record files + repository metadata files + repository config files -> recovery record set
+object-envelope files + pack files + snapshot record files + `repository` files + repository config files -> recovery record set
 ```
 
 This allows recovery tools to repair corrupted encrypted objects without needing the encryption key.
@@ -615,7 +615,7 @@ chunk bytes
 
 Encrypted repositories use the same chunk boundaries, but derive public chunk object IDs with the repository `object-id-key`.
 
-Chunker parameters must be stored in the manifest or internal repository metadata. Changing chunker parameters changes deduplication behavior, so a repository should treat them as part of the object format profile.
+Chunker parameters must be stored in the manifest or the `repository` file. Changing chunker parameters changes deduplication behavior, so a repository should treat them as part of the object format profile.
 
 Each chunk is compressed and encrypted independently after chunk boundaries are selected.
 
@@ -866,7 +866,7 @@ repository/
 Notes:
 
 - `repository` stores binary internal metadata such as repository ID, repository format version, object format version, hash algorithm, metadata encoding, canonical compression profile, object layout, encryption mode, key derivation public parameters, and creation time.
-- `config.toml` stores repository policy such as retention defaults, recovery record defaults, repository metadata capture defaults, and extension policy.
+- `config.toml` stores repository policy such as retention defaults, recovery record defaults, filesystem metadata capture defaults, and extension policy.
 - `local/config.toml` stores client-local configuration such as remotes, credential references, restore defaults, service settings, and UI preferences.
 - `jobs` stores repeatable snapshot job definitions such as source paths, schedules, filters, and per-job capture overrides.
 - `lock` prevents multiple processes from writing to the repository at the same time.

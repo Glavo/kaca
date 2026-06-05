@@ -13,7 +13,7 @@ Structured metadata bodies use deterministic CBOR with this profile:
 - Definite-length arrays, maps, byte strings, and text strings.
 - Shortest valid integer encoding.
 - Canonically sorted map keys.
-- Integer map keys for long-lived repository metadata.
+- Integer map keys for long-lived `repository` fields.
 - No floating point values.
 - Explicit enum integer values.
 - Explicit format version fields.
