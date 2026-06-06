@@ -319,8 +319,8 @@ The physical object format is an envelope containing payload bytes plus compress
 The object file should contain:
 
 ```text
-object-file := object-header + payload
-payload := raw-content | compressed-content
+object-file := fixed-header + object-id + public-header + private-header + payload + physical-checksum
+payload := raw-content | compressed-content | encrypted-raw-content | encrypted-compressed-content
 ```
 
 Object metadata is embedded in the object header.
@@ -331,7 +331,8 @@ Object headers must satisfy these requirements:
 - Moving or copying an object must preserve the metadata needed to verify it.
 - `verify` must be able to validate one physical file at a time.
 - Recovery records must protect complete object files without pairing data and metadata files.
-- Encryption must authenticate the object private header and payload together.
+- Encryption must authenticate the object private header and payload together with one AEAD operation.
+- The physical checksum must cover every envelope byte before the checksum field.
 - Pruning must operate on complete object files.
 
 The repository object format has no sidecar metadata files.
@@ -344,9 +345,11 @@ The object header should be minimal and versioned. In an unencrypted repository,
 - Payload compression algorithm.
 - Payload size.
 
-In an encrypted repository, public headers contain only the metadata allowed by the selected encryption mode. The object format supports a public header plus an encrypted private header.
+In an encrypted repository, public headers contain only the metadata allowed by the selected encryption mode. The object format supports a public header plus a private header that is encrypted when object encryption is enabled.
 
 The payload may be stored uncompressed when compression is disabled for that object or when compression produces insufficient size reduction. The header explicitly records that decision.
+
+The object envelope stores a private header. In unencrypted objects, the private header is deterministic metadata bytes. In encrypted objects, the private header and payload are ciphertext produced by one AEAD operation.
 
 The import pipeline writes immutable repository objects from verified bytes. Mutable source files are copied or cloned into repository-owned storage before becoming reachable.
 
@@ -376,7 +379,7 @@ Encrypted repository model:
 
 - Use a repository master key derived from a password or imported from a key file.
 - Derive separate subkeys for object IDs, object encryption, manifest encryption, and metadata authentication.
-- Use AEAD encryption for object payloads and encrypted private headers.
+- Use AEAD encryption for object private headers and payloads.
 - Use random nonces for physical encryption.
 - Use keyed object IDs, such as `HMAC(object-id-key, logical-content-hash)`, so deduplication still works inside the repository without exposing raw plaintext hashes in file names.
 
@@ -421,7 +424,7 @@ canonicalLogicalBytes
 
 A separate physical checksum may be computed over the encrypted object envelope for transfer validation or recovery diagnostics. The checksum is physical validation metadata.
 
-Encrypted repositories keep raw plaintext `contentHash` values out of public object paths and public headers. Raw content hashes may be stored inside encrypted private headers when needed for high-assurance verification.
+Encrypted repositories keep raw plaintext `contentHash` values out of public object paths and public headers. Raw content hashes may be stored inside private headers that are encrypted when object encryption is enabled.
 
 Encryption is repository-wide once enabled. Migration formats define any transition between encrypted and unencrypted storage.
 

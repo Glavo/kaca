@@ -343,7 +343,7 @@ object-envelope :=
   fixed-header
   object-id
   public-header
-  encrypted-private-header
+  private-header
   payload
   physical-checksum
 ```
@@ -363,13 +363,31 @@ Fixed header:
 | 36 | 2 | encryption algorithm |
 | 38 | 2 | reserved zero |
 | 40 | 4 | public header length |
-| 44 | 4 | encrypted private header length |
+| 44 | 4 | private header length |
 | 48 | 8 | physical checksum digest profile |
 | 56 | 8 | reserved zero |
 
-`header length` includes the fixed header, object ID, public header, and encrypted private header. The fixed header length is 64 bytes.
+`header length` includes the fixed header, object ID, public header, and private header. The fixed header length is 64 bytes.
 
-The physical checksum is computed over every byte before the checksum field.
+`payload length` is the stored payload length after compression and after encryption when encryption is enabled. `logical size` is the canonical logical byte length before compression, encryption, and envelope encoding.
+
+The object ID field stores a complete digest value. The object ID length field is the byte length of that digest value.
+
+The physical checksum is computed over `fixed-header + object-id + public-header + private-header + payload`. The `physical-checksum` field stores only digest bytes; the digest profile is stored in the fixed header.
+
+Object payload construction:
+
+```text
+canonical logical bytes
+  -> content digest
+  -> object ID
+  -> compression decision
+  -> stored plaintext payload
+  -> optional encryption
+  -> envelope payload
+```
+
+Compression is applied before encryption. When compression is not used, the compression algorithm is `none` and the stored plaintext payload is the canonical logical bytes.
 
 Public header body uses deterministic CBOR:
 
@@ -382,12 +400,22 @@ Public header body uses deterministic CBOR:
 | 5 | map | public encryption parameters |
 | 6 | uint | creation time, Unix milliseconds |
 
-Encrypted private header body uses deterministic CBOR after decryption:
+Private header body uses deterministic CBOR. In encrypted objects, this body is available after decryption:
 
 | Key | Type | Field |
 |---:|---|---|
 | 1 | bstr | plaintext content digest value |
 | 2 | bstr | secondary plaintext digest value |
+
+When object encryption is disabled, `private-header` contains the deterministic CBOR private header body and `payload` contains the stored plaintext payload.
+
+When object encryption is enabled, one AEAD operation authenticates and encrypts `private-header body + stored plaintext payload`. The resulting ciphertext is split back into `private-header` and `payload` using the private header length and payload length fields. The AEAD associated data is:
+
+```text
+fixed-header + object-id + public-header-with-authentication-tag-empty
+```
+
+The authentication tag is stored in the public encryption parameters.
 
 Public encryption parameters:
 
@@ -396,6 +424,8 @@ Public encryption parameters:
 | 1 | bstr | nonce |
 | 2 | bstr | authentication tag |
 | 3 | uint | key slot ID |
+
+When encryption is disabled, the public encryption parameters map is empty. When encryption is enabled, `public-header-with-authentication-tag-empty` is encoded by setting key `2` to an empty byte string before computing AEAD associated data.
 
 ## 5. Structured Payloads
 
