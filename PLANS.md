@@ -95,7 +95,7 @@ Job configuration is stored in `jobs/*.toml` or a user-level job directory. It c
 
 Changing `config.toml` preserves existing object identity and repository format. Changes that affect immutable repository structure require an explicit repository migration.
 
-Concrete repository binary formats are defined in `docs/repository-format.md`. The layered configuration schema is defined in `docs/configuration.md`. Repository transaction and crash recovery rules are defined in `docs/transactions.md`.
+Concrete repository binary formats are defined in `docs/repository-format.md`. The layered configuration schema is defined in `docs/configuration.md`. Repository transaction and crash recovery rules are defined in `docs/transactions.md`. Remote synchronization rules are defined in `docs/synchronization.md`.
 
 ## 3. Core Principles
 
@@ -540,6 +540,8 @@ Remote synchronization should support resumable transfer:
 - Avoid relying on remote indexes as the source of truth.
 
 The remote layout can mirror the local repository layout, or it can use a provider-specific API. The logical sync protocol should still be based on repository IDs, object IDs, snapshot record IDs, and recovery set IDs.
+
+The remote synchronization specification is defined in `docs/synchronization.md`.
 
 ### 3.7 Large Object Chunking
 
@@ -1132,10 +1134,11 @@ Manages remote repository synchronization.
 Suggested capabilities:
 
 - Configure remote endpoints.
-- List remote object IDs.
+- Build remote inventory.
 - Upload missing immutable objects.
 - Download missing immutable objects.
 - Upload and download mutable snapshot records with conflict detection.
+- Synchronize snapshot record tombstones.
 - Synchronize recovery record sets.
 - Verify transferred files by size and hash.
 - Support resumable uploads and downloads.
