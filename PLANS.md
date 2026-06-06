@@ -95,7 +95,7 @@ Job configuration is stored in `jobs/*.toml` or a user-level job directory. It c
 
 Changing `config.toml` preserves existing object identity and repository format. Changes that affect immutable repository structure require an explicit repository migration.
 
-Concrete repository binary formats are defined in `docs/repository-format.md`. The layered configuration schema is defined in `docs/configuration.md`.
+Concrete repository binary formats are defined in `docs/repository-format.md`. The layered configuration schema is defined in `docs/configuration.md`. Repository transaction and crash recovery rules are defined in `docs/transactions.md`.
 
 ## 3. Core Principles
 
@@ -829,7 +829,11 @@ Write order:
 5. Atomically write the mutable snapshot record.
 6. Update indexes.
 
-If the process is interrupted, the repository should be able to detect and clean temporary files through `repair` or `verify`.
+Repository mutations use a writer lock, transaction workspace, atomic same-filesystem rename, directory flushing, and explicit crash recovery rules.
+
+The transaction and atomic publication specification is defined in `docs/transactions.md`.
+
+If the process is interrupted, `repair` and `verify` detect incomplete transaction workspaces, orphan objects, broken snapshot records, invalid pack pairs, and stale rebuildable indexes.
 
 ### 3.12 Verifiability
 
