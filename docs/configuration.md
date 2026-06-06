@@ -261,6 +261,7 @@ repository = ".."
 
 [[sources]]
 id = "home"
+kind = "directory"
 path = "D:/Users/example"
 display_name = "Home"
 include = ["**"]
@@ -268,6 +269,7 @@ exclude = ["**/build/**", "**/.gradle/**"]
 
 [[sources]]
 id = "work"
+kind = "directory"
 path = "D:/Work"
 display_name = "Work"
 include = ["**"]
@@ -300,12 +302,28 @@ Each source entry defines one tracked root for snapshots created by the job.
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `id` | string | required | Stable root ID used in snapshot-relative paths. |
+| `kind` | string | `"directory"` | Source root kind. |
 | `path` | string | required | Source path scanned for this root. |
 | `display_name` | string | `id` | User-facing root name. |
 | `include` | array of strings | job `[filters].include` | Include patterns for this source. |
 | `exclude` | array of strings | job `[filters].exclude` | Exclude patterns for this source. |
 
 Source IDs are unique within a job. Snapshot-relative paths use `<source-id>/<relative-path>`.
+
+Source ID values match:
+
+```text
+[a-z][a-z0-9._-]{0,63}
+```
+
+Source `kind` values:
+
+| Value | Meaning |
+|---|---|
+| `"directory"` | Scan a directory tree. |
+| `"file"` | Scan one regular file as a source root. |
+
+Overlapping source paths are valid. Job diagnostics report overlapping sources with their source IDs and paths.
 
 ### 4.3 `[metadata]`
 
@@ -384,5 +402,7 @@ The parser validates:
 - Required job fields.
 - At least one source entry for each job.
 - Unique source IDs within each job.
+- Valid source ID syntax.
+- Valid source root kind values.
 
 Invalid configuration files produce diagnostics with file path, layer, table name, key name, invalid value, and expected value set.

@@ -101,7 +101,7 @@ Concrete repository binary formats are defined in `docs/repository-format.md`. T
 
 ### 3.1 Snapshots Are Complete Multi-Root Views
 
-Each snapshot should fully describe the source root set at a point in time. A source root represents one tracked directory with a stable root ID, a display name, a captured source path, a root tree reference, source-specific filters, and required metadata.
+Each snapshot should fully describe the source root set at a point in time. A source root represents one tracked directory or regular file with a stable root ID, a display name, a captured source path, a source root kind, source-specific filters, and required metadata.
 
 Restoring an arbitrary snapshot uses the snapshot's own complete root set. Restore commands can restore every root, a selected root, or selected paths inside selected roots.
 
@@ -112,6 +112,8 @@ Snapshot-relative paths are scoped by root ID:
 ```
 
 The captured source path is display and audit metadata. Object identity and snapshot path identity use root IDs and relative paths.
+
+Root IDs match `[a-z][a-z0-9._-]{0,63}` and are unique within a snapshot. Overlapping source paths are valid and remain separate logical roots.
 
 ### 3.2 Content-Addressed Storage
 
@@ -940,23 +942,14 @@ The example below is JSON for readability. The stored snapshot object should use
 }
 ```
 
-Additional fields to define:
+Snapshot payload requirements:
 
-- Directory entries.
-- Symbolic link entries.
-- Captured metadata profile.
-- Portable metadata fields.
-- POSIX mode, uid, gid, user name, and group name.
-- Windows file attributes and security descriptor.
-- Extended attributes.
-- ACLs.
-- macOS flags and resource fork metadata.
-- Windows reparse point metadata.
-- Root IDs and root display names.
-- Captured source path display information.
-- Root-level case sensitivity policy.
-- Whole-file content references.
-- Chunked content references.
+- The root list contains one or more source roots.
+- Each source root records root ID, display name, source root kind, captured source path display information, filter summary, case sensitivity policy, and root content entries.
+- Directory, regular file, symbolic link, hard link, and special file entries use structured tree entry records.
+- Regular file entries support whole-file content references and ordered chunked content references.
+- Captured metadata follows the active metadata capture profile.
+- Captured metadata supports portable fields, POSIX fields, Windows attributes and security descriptors, extended attributes, ACLs, macOS flags, macOS resource fork metadata, and Windows reparse point metadata.
 
 ## 6. Main Modules
 
@@ -1251,12 +1244,14 @@ When a newer program opens an older repository, it must clearly decide:
 
 ### 9.4 Cross-Platform Path Differences
 
-The internal path format should be defined early:
+The internal path format is:
 
 - Use `/` as the path separator inside manifests.
 - Store only root-scoped snapshot-relative entry paths.
+- Store tree entry names as single path segments.
+- Reject empty path segments, `.`, `..`, path separators inside entry names, NUL, and ASCII control characters.
 - Keep captured source root paths only for display and audit.
-- Define the policy for Windows case-insensitive paths and Linux case-sensitive paths.
+- Record root-level case sensitivity as `case-sensitive` or `case-insensitive-preserving`.
 
 ### 9.5 Encryption Metadata Leakage
 

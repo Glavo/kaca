@@ -21,6 +21,26 @@ Structured metadata bodies use deterministic CBOR with this profile:
 
 Object identity is computed from canonical logical bytes before compression, encryption, and envelope encoding.
 
+### 1.1 Identifiers and Paths
+
+Root IDs are UTF-8 text strings that match:
+
+```text
+[a-z][a-z0-9._-]{0,63}
+```
+
+Root IDs are case-sensitive and are compared by exact Unicode scalar value after UTF-8 decoding. The values `.`, `..`, and strings containing `/`, `\`, `:`, ASCII control characters, or NUL are invalid.
+
+Tree entry names are UTF-8 text strings normalized to NFC. Entry names are single path segments and cannot contain `/`, `\`, NUL, or ASCII control characters. The values `.`, `..`, and the empty string are invalid entry names.
+
+Snapshot-relative paths are formed for display, filtering, sparse restore, and diagnostics by joining the root ID and tree entry names with `/`:
+
+```text
+<root-id>/<entry-name>/<entry-name>
+```
+
+Stored tree entries contain only one path segment at a time. Full paths are reconstructed by walking tree references.
+
 ## 2. Algorithm Identifiers
 
 Digest algorithms use an 8-byte profile identifier:
@@ -435,8 +455,42 @@ Snapshot root map:
 | 5 | array | direct entries |
 | 6 | map / null | source filter summary |
 | 7 | uint | case sensitivity policy |
+| 8 | uint | source root kind |
 
 Root IDs are unique within a snapshot. Snapshot-relative paths are scoped as `<root-id>/<relative-path>`.
+
+Source root kinds:
+
+| ID | Kind |
+|---:|---|
+| 1 | directory |
+| 2 | regular file |
+
+Case sensitivity policies:
+
+| ID | Policy |
+|---:|---|
+| 1 | case-sensitive |
+| 2 | case-insensitive-preserving |
+
+Source display information map:
+
+| Key | Type | Field |
+|---:|---|---|
+| 1 | tstr | captured source path |
+| 2 | tstr | source platform |
+| 3 | bstr / null | source path fingerprint |
+
+Source filter summary map:
+
+| Key | Type | Field |
+|---:|---|---|
+| 1 | array | include patterns |
+| 2 | array | exclude patterns |
+
+For a directory source root, `root tree reference` points to the root directory tree when tree payloads are used. `direct entries` stores root directory entries when the snapshot embeds entries directly.
+
+For a regular file source root, `direct entries` contains one regular file entry using the captured file name as the entry name.
 
 Tree reference map:
 
