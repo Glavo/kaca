@@ -13,7 +13,9 @@ This document describes the architecture plan for `kaca`, an incremental backup 
 - Treat optional encryption and recovery records as first-class architecture concerns.
 - Reserve a manifest model for chunked large objects.
 - Support sparse restore and leave room for long-lived sparse checkout worktrees.
-- Include remote repositories, synchronization, chunk-level deduplication, and scheduled jobs in the initial architecture scope.
+- Support repository storage backends that are independent from source file locations.
+- Support single-file repository archive and bundle formats for migration and portable storage.
+- Include repository storage backends, synchronization, chunk-level deduplication, and scheduled jobs in the initial architecture scope.
 
 ## 2. Architecture Scope and Implementation Phasing
 
@@ -21,8 +23,10 @@ The architecture should account for the full product shape from the beginning, e
 
 Architecture scope includes:
 
-- Local repositories.
-- Remote repositories and synchronization.
+- Repository storage backends.
+- Source storage backends.
+- Remote synchronization between repository backends.
+- Single-file repository archive and bundle formats.
 - Immutable object storage.
 - Mutable snapshot records.
 - Compression.
@@ -95,7 +99,19 @@ Job configuration is stored in `jobs/*.toml` or a user-level job directory. It c
 
 Changing `config.toml` preserves existing object identity and repository format. Changes that affect immutable repository structure require an explicit repository migration.
 
-Concrete repository binary formats are defined in `docs/repository-format.md`. Snapshot and tree semantics are defined in `docs/snapshot-model.md`. The layered configuration schema is defined in `docs/configuration.md`. Repository transaction and crash recovery rules are defined in `docs/transactions.md`. Remote synchronization rules are defined in `docs/synchronization.md`. Recovery record rules are defined in `docs/recovery.md`.
+Concrete repository binary formats are defined in `docs/repository-format.md`. Snapshot and tree semantics are defined in `docs/snapshot-model.md`. Storage backend rules are defined in `docs/storage-backends.md`. The layered configuration schema is defined in `docs/configuration.md`. Repository transaction and crash recovery rules are defined in `docs/transactions.md`. Remote synchronization rules are defined in `docs/synchronization.md`. Recovery record rules are defined in `docs/recovery.md`.
+
+### 2.2 Storage Backend Model
+
+The architecture separates source access from repository storage:
+
+```text
+SourceStore -> scanner/hash/chunker -> RepositoryStore
+```
+
+Source files and repository storage may be located on different devices, hosts, or services. Snapshot creation may execute near the source, near the repository, or through a controller coordinating source agents and repository backends.
+
+RepositoryStore backends include file-tree repositories, remote tree/object repositories, single-file archives, and append-oriented bundle files. The logical repository model is independent from the physical RepositoryStore backend.
 
 ## 3. Core Principles
 
@@ -496,11 +512,11 @@ Recovery records can be generated explicitly before automatic recovery schedulin
 
 The recovery record specification is defined in `docs/recovery.md`.
 
-### 3.6 Remote Repositories and Synchronization
+### 3.6 Repository Synchronization
 
-Remote synchronization is transport for repository state.
+Remote synchronization is repository state transfer between RepositoryStore backends.
 
-The remote model should handle:
+The synchronization model handles:
 
 - Immutable objects.
 - Mutable snapshot records.
@@ -511,7 +527,7 @@ The remote model should handle:
 Immutable objects are content-addressed and can be synchronized by object ID:
 
 ```text
-local object IDs - remote object IDs = missing objects
+source RepositoryStore object IDs - destination RepositoryStore object IDs = missing objects
 upload missing objects
 download missing objects
 verify object hashes
@@ -523,25 +539,25 @@ Conflict strategy:
 
 - Keep immutable snapshot objects conflict-free.
 - Version mutable snapshot records with `updatedAt` and a record revision.
-- Detect concurrent edits before writing remote changes over local records.
+- Detect concurrent edits before replacing destination snapshot records.
 - Resolve conflicts field-by-field when possible.
 - Preserve conflicting records as explicit conflict copies when automatic merge is unsafe.
 
-Remote repositories may be trusted or untrusted. For untrusted remotes:
+Synchronization targets may be trusted or untrusted. For untrusted targets:
 
 - Object payloads should be encrypted before upload.
 - Snapshot object metadata should be encrypted in full repository encryption mode.
 - Mutable snapshot records may also need encryption.
-- Remote providers store, list, and transfer repository files without plaintext keys.
+- Backend providers store, list, and transfer repository files without plaintext keys.
 
 Remote synchronization should support resumable transfer:
 
 - Upload and download temporary files.
-- Commit files atomically on the remote when the provider supports it.
+- Commit files atomically on the destination backend when the provider supports it.
 - Verify size and hash after transfer.
-- Avoid relying on remote indexes as the source of truth.
+- Avoid relying on synchronized indexes as the source of truth.
 
-The remote layout can mirror the local repository layout, or it can use a provider-specific API. The logical sync protocol should still be based on repository IDs, object IDs, snapshot record IDs, and recovery set IDs.
+The synchronized layout can mirror the file-tree repository layout, map repository paths to provider-specific objects, or use a single-file repository backend. The logical sync protocol is based on repository IDs, object IDs, pack IDs, snapshot record IDs, and recovery set IDs.
 
 The remote synchronization specification is defined in `docs/synchronization.md`.
 
@@ -1131,13 +1147,13 @@ Suggested capabilities:
 - Track which snapshots, objects, and metadata files are protected by each recovery set.
 - Coordinate with `prune` so recovery records are refreshed after protected repository files are deleted.
 
-### 6.13 RemoteStore
+### 6.13 RepositorySync
 
-Manages remote repository synchronization.
+Manages synchronization between RepositoryStore backends.
 
 Suggested capabilities:
 
-- Configure remote endpoints.
+- Configure repository backend endpoints.
 - Build remote inventory.
 - Upload missing immutable objects.
 - Download missing immutable objects.
@@ -1146,7 +1162,7 @@ Suggested capabilities:
 - Synchronize recovery record sets.
 - Verify transferred files by size and hash.
 - Support resumable uploads and downloads.
-- Keep remote indexes rebuildable and non-authoritative.
+- Keep synchronized indexes rebuildable and non-authoritative.
 
 ## 7. CLI Draft
 
@@ -1155,6 +1171,8 @@ The CLI surface should cover the architecture scope, while individual commands c
 ```text
 kaca init <repository>
 kaca init <repository> --encrypt
+kaca init zip:file:///<archive-path>
+kaca init bundle:file:///<bundle-path>
 kaca snapshot <source>... --repo <repository>
 kaca snapshot --source <root-id>=<source-path> --source <root-id>=<source-path> --repo <repository>
 kaca snapshot <source>... --repo <repository> --metadata-capture portable|system|full
@@ -1181,6 +1199,8 @@ kaca remote list --repo <repository>
 kaca sync push <remote> --repo <repository>
 kaca sync pull <remote> --repo <repository>
 kaca sync verify <remote> --repo <repository>
+kaca archive export <archive-repository> --repo <repository>
+kaca archive import <archive-repository> --repo <repository>
 kaca checkout <snapshot-id> <target> --repo <repository> --sparse <spec>
 kaca checkout add <path>
 kaca checkout remove <path>
@@ -1193,7 +1213,8 @@ kaca serve --repo <repository>
 
 The architecture baseline includes:
 
-- Local and remote repositories.
+- RepositoryStore and SourceStore backends.
+- Single-file repository archive and bundle backends.
 - Untyped object envelopes.
 - Untyped objects for whole files, chunks, and structured metadata payloads.
 - Typed semantic references for snapshots, trees, files, and chunks.
@@ -1326,7 +1347,7 @@ Safe strategy:
 - Import mutable source files through verified object writes.
 - Treat hard links as filesystem metadata to record and restore.
 - Prefer verified normal copies as the default import path.
-- Consider reflink or platform copy-on-write clone support as an optimized copy path with verified semantics.
+- Evaluate reflink or platform copy-on-write clone support as an optimized copy path with verified semantics.
 - Verify object content before making any optimized copy reachable.
 
 ### 9.10 Remote Sync Conflicts

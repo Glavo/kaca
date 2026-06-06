@@ -2,7 +2,7 @@
 
 This document defines the user-editable configuration files used by `kaca`.
 
-Repository identity, object identity, digest profiles, object layout, canonical compression profile, encryption mode, and repository format versions are stored in `repository`. Configuration files store policy, defaults, local client settings, remote endpoints, and job definitions.
+Repository identity, object identity, digest profiles, object layout, canonical compression profile, encryption mode, and repository format versions are stored in `repository`. Configuration files store policy, defaults, local client settings, repository endpoints, and job definitions.
 
 ## 1. Configuration Layers
 
@@ -33,6 +33,8 @@ Configuration file locations:
 The parser accepts the keys defined for the file's layer. Extension data is stored under `[extensions.<name>]`.
 
 Repository synchronization includes repository configuration and repository state. Repository-local client configuration is resolved by the local client that owns the `local` directory.
+
+Repository and source locations may be local paths or backend locators as defined in `docs/storage-backends.md`.
 
 ## 2. Repository Configuration
 
@@ -212,7 +214,7 @@ Metadata profile values:
 
 ### 3.6 `[[remotes]]`
 
-Each remote entry defines one synchronization target for the active client.
+Each remote entry defines one RepositoryStore synchronization target for the active client.
 
 | Key | Type | Required | Description |
 |---|---|---|---|
@@ -228,10 +230,17 @@ Remote `kind` values:
 | Value |
 |---|
 | `"local"` |
+| `"file-tree"` |
 | `"sftp"` |
+| `"sftp-tree"` |
 | `"s3"` |
+| `"s3-object"` |
 | `"webdav"` |
+| `"webdav-tree"` |
 | `"rest"` |
+| `"zip-archive"` |
+| `"sevenzip-archive"` |
+| `"bundle-file"` |
 
 Remote `trust` values:
 
@@ -257,7 +266,7 @@ Job configuration files define repeatable snapshot tasks.
 ```toml
 job_version = 1
 name = "home"
-repository = ".."
+repository = "sftp://backup.example.com/kaca/repository"
 
 [[sources]]
 id = "home"
@@ -293,7 +302,7 @@ exclude = []
 |---|---|---|---|
 | `job_version` | integer | required | Job configuration format version. |
 | `name` | string | required | Stable job name. |
-| `repository` | string | absent | Repository path for user-level job files. |
+| `repository` | string | absent | Repository locator for user-level job files. |
 
 ### 4.2 `[[sources]]`
 
@@ -303,7 +312,7 @@ Each source entry defines one tracked root for snapshots created by the job.
 |---|---|---|---|
 | `id` | string | required | Stable root ID used in snapshot-relative paths. |
 | `kind` | string | `"directory"` | Source root kind. |
-| `path` | string | required | Source path scanned for this root. |
+| `path` | string | required | Source locator scanned for this root. |
 | `display_name` | string | `id` | User-facing root name. |
 | `include` | array of strings | job `[filters].include` | Include patterns for this source. |
 | `exclude` | array of strings | job `[filters].exclude` | Exclude patterns for this source. |
