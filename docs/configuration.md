@@ -257,8 +257,21 @@ Job configuration files define repeatable snapshot tasks.
 ```toml
 job_version = 1
 name = "home"
-source = "D:/Users/example"
 repository = ".."
+
+[[sources]]
+id = "home"
+path = "D:/Users/example"
+display_name = "Home"
+include = ["**"]
+exclude = ["**/build/**", "**/.gradle/**"]
+
+[[sources]]
+id = "work"
+path = "D:/Work"
+display_name = "Work"
+include = ["**"]
+exclude = ["**/out/**"]
 
 [metadata]
 capture = "portable"
@@ -269,7 +282,7 @@ calendar = "daily 02:00"
 
 [filters]
 include = ["**"]
-exclude = ["**/build/**", "**/.gradle/**"]
+exclude = []
 ```
 
 ### 4.1 Top-Level Keys
@@ -278,16 +291,29 @@ exclude = ["**/build/**", "**/.gradle/**"]
 |---|---|---|---|
 | `job_version` | integer | required | Job configuration format version. |
 | `name` | string | required | Stable job name. |
-| `source` | string | required | Source path for snapshots created by the job. |
 | `repository` | string | absent | Repository path for user-level job files. |
 
-### 4.2 `[metadata]`
+### 4.2 `[[sources]]`
+
+Each source entry defines one tracked root for snapshots created by the job.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `id` | string | required | Stable root ID used in snapshot-relative paths. |
+| `path` | string | required | Source path scanned for this root. |
+| `display_name` | string | `id` | User-facing root name. |
+| `include` | array of strings | job `[filters].include` | Include patterns for this source. |
+| `exclude` | array of strings | job `[filters].exclude` | Exclude patterns for this source. |
+
+Source IDs are unique within a job. Snapshot-relative paths use `<source-id>/<relative-path>`.
+
+### 4.3 `[metadata]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `capture` | string | resolved | Filesystem metadata capture profile for snapshots created by the job. |
 
-### 4.3 `[schedule]`
+### 4.4 `[schedule]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -296,12 +322,12 @@ exclude = ["**/build/**", "**/.gradle/**"]
 
 The calendar expression format is a separate scheduler interface decision.
 
-### 4.4 `[filters]`
+### 4.5 `[filters]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `include` | array of strings | absent | Include patterns for source scanning. |
-| `exclude` | array of strings | absent | Exclude patterns for source scanning. |
+| `include` | array of strings | absent | Default include patterns for source scanning. |
+| `exclude` | array of strings | absent | Default exclude patterns for source scanning. |
 
 ## 5. Extensions
 
@@ -356,5 +382,7 @@ The parser validates:
 - Unique remote names after layer resolution.
 - Extension table names.
 - Required job fields.
+- At least one source entry for each job.
+- Unique source IDs within each job.
 
 Invalid configuration files produce diagnostics with file path, layer, table name, key name, invalid value, and expected value set.

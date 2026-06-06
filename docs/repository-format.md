@@ -412,11 +412,9 @@ Snapshot body map:
 |---:|---|---|
 | 1 | bstr | snapshot ID |
 | 2 | uint | created time, Unix milliseconds |
-| 3 | map | source display information |
+| 3 | array | snapshot roots |
 | 4 | bstr / null | parent snapshot object ID digest value |
 | 5 | uint | metadata capture profile |
-| 6 | map | root tree reference |
-| 7 | array | direct entries |
 
 Metadata capture profiles:
 
@@ -425,6 +423,20 @@ Metadata capture profiles:
 | 1 | `portable` |
 | 2 | `system` |
 | 3 | `full` |
+
+Snapshot root map:
+
+| Key | Type | Field |
+|---:|---|---|
+| 1 | tstr | root ID |
+| 2 | tstr | display name |
+| 3 | map | source display information |
+| 4 | map / null | root tree reference |
+| 5 | array | direct entries |
+| 6 | map / null | source filter summary |
+| 7 | uint | case sensitivity policy |
+
+Root IDs are unique within a snapshot. Snapshot-relative paths are scoped as `<root-id>/<relative-path>`.
 
 Tree reference map:
 

@@ -4,9 +4,9 @@ This document describes the architecture plan for `kaca`, an incremental backup 
 
 ## 1. Design Goals
 
-- Create restorable snapshots for a directory.
+- Create restorable snapshots for one or more directories.
 - Reuse identical content across snapshots to reduce duplicate storage.
-- Treat every snapshot as a complete directory view with direct restore semantics.
+- Treat every snapshot as a complete multi-root directory view with direct restore semantics.
 - Keep the backup repository verifiable, restorable, and safely cleanable.
 - Prioritize data reliability first, then optimize speed, storage efficiency, and user experience.
 - Use compressed object storage as part of the initial repository format.
@@ -75,7 +75,7 @@ Repository configuration is stored in `config.toml`. It contains portable reposi
 
 - Retention defaults.
 - Recovery record defaults.
-- Repository metadata capture default.
+- Filesystem metadata capture default.
 - Extension policy.
 
 Repository-local client configuration is stored in `local/config.toml`. It contains machine-specific and client-specific defaults:
@@ -88,7 +88,7 @@ Repository-local client configuration is stored in `local/config.toml`. It conta
 
 Job configuration is stored in `jobs/*.toml` or a user-level job directory. It contains repeatable snapshot task definitions:
 
-- Source paths.
+- Source roots.
 - Schedule expressions.
 - Include and exclude patterns.
 - Per-job metadata capture override.
@@ -99,11 +99,19 @@ Concrete repository binary formats are defined in `docs/repository-format.md`. T
 
 ## 3. Core Principles
 
-### 3.1 Snapshots Are Complete Views
+### 3.1 Snapshots Are Complete Multi-Root Views
 
-Each snapshot should fully describe the source directory state at a point in time, including files, directories, symbolic links, and required metadata.
+Each snapshot should fully describe the source root set at a point in time. A source root represents one tracked directory with a stable root ID, a display name, a captured source path, a root tree reference, source-specific filters, and required metadata.
 
-Restoring an arbitrary snapshot uses the snapshot's own complete directory view.
+Restoring an arbitrary snapshot uses the snapshot's own complete root set. Restore commands can restore every root, a selected root, or selected paths inside selected roots.
+
+Snapshot-relative paths are scoped by root ID:
+
+```text
+<root-id>/<relative-path>
+```
+
+The captured source path is display and audit metadata. Object identity and snapshot path identity use root IDs and relative paths.
 
 ### 3.2 Content-Addressed Storage
 
@@ -170,7 +178,7 @@ The semantic layer must distinguish how object bytes are interpreted:
 
 ```text
 snapshot record -> snapshotRef -> snapshot payload
-snapshot payload -> treeRef -> tree payload
+snapshot payload -> root entries -> treeRef -> tree payload
 tree payload -> blobRef or chunk list -> file bytes
 ```
 
@@ -185,7 +193,7 @@ Semantic validation must happen above the object store:
 
 - References must carry the expected semantic format when the target object is structured metadata.
 - Payload parsers must reject mismatched magic values, unsupported versions, and malformed canonical encodings.
-- Semantic verification must traverse snapshot roots and parse expected formats.
+- Semantic verification must traverse every snapshot root and parse expected formats.
 - Type-specific maintenance must use indexes or semantic scans.
 
 Structured payload formats must be self-describing:
@@ -768,10 +776,11 @@ Capture profile resolution uses command invocation overrides, job configuration,
 
 The snapshot model should support sparse restore: restoring only selected paths or path patterns from a snapshot.
 
-Simple sparse behavior can be implemented by loading the snapshot manifest and filtering entries:
+Simple sparse behavior can be implemented by loading the snapshot manifest and filtering entries. Path filters may include a root ID prefix:
 
 ```text
 kaca restore <snapshot-id> <target> --path docs/readme.md
+kaca restore <snapshot-id> <target> --root work --path docs/readme.md
 kaca restore <snapshot-id> <target> --include "src/**" --exclude "build/**"
 ```
 
@@ -780,7 +789,7 @@ This simple sparse path is correct for one-shot restore. Very large snapshots us
 Efficient long-term sparse checkout needs tree-style structured metadata payloads:
 
 ```text
-snapshot object -> root tree reference -> directory tree references -> file content references
+snapshot object -> root entries -> root tree references -> directory tree references -> file content references
 ```
 
 With tree objects, a restore operation for `src/main/**` only needs to load the relevant metadata branches and referenced data objects.
@@ -868,7 +877,7 @@ Notes:
 - `repository` stores binary internal metadata such as repository ID, repository format version, object format version, hash algorithm, metadata encoding, canonical compression profile, object layout, encryption mode, key derivation public parameters, and creation time.
 - `config.toml` stores repository policy such as retention defaults, recovery record defaults, filesystem metadata capture defaults, and extension policy.
 - `local/config.toml` stores client-local configuration such as remotes, credential references, restore defaults, service settings, and UI preferences.
-- `jobs` stores repeatable snapshot job definitions such as source paths, schedules, filters, and per-job capture overrides.
+- `jobs` stores repeatable snapshot job definitions such as source roots, schedules, filters, and per-job capture overrides.
 - `lock` prevents multiple processes from writing to the repository at the same time.
 - `objects` stores untyped physical object envelopes keyed by object ID.
 - `packs` stores immutable packed object files and pack indexes.
@@ -895,27 +904,37 @@ The example below is JSON for readability. The stored snapshot object should use
   "id": "snapshot-id",
   "createdAt": "2026-05-27T01:30:00Z",
   "metadataProfile": "portable",
-  "source": {
-    "path": "D:\\Projects\\example"
-  },
   "parent": "previous-snapshot-id",
-  "entries": [
+  "roots": [
     {
-      "path": "docs/readme.md",
-      "type": "file",
-      "size": 1024,
-      "metadata": {
-        "modifiedAt": "2026-05-27T01:00:00Z",
-        "executable": false,
-        "readonly": false
+      "rootId": "work",
+      "displayName": "Work",
+      "source": {
+        "path": "D:\\Projects\\example"
       },
-      "object": {
-        "id": "abcdef...",
-        "contentSize": 1024,
-        "storedSize": 512,
-        "compression": "zstd",
-        "encryption": "none"
-      }
+      "tree": {
+        "id": "tree-object-id",
+        "format": "kaca-tree-v1"
+      },
+      "entries": [
+        {
+          "path": "docs/readme.md",
+          "type": "file",
+          "size": 1024,
+          "metadata": {
+            "modifiedAt": "2026-05-27T01:00:00Z",
+            "executable": false,
+            "readonly": false
+          },
+          "object": {
+            "id": "abcdef...",
+            "contentSize": 1024,
+            "storedSize": 512,
+            "compression": "zstd",
+            "encryption": "none"
+          }
+        }
+      ]
     }
   ]
 }
@@ -933,7 +952,9 @@ Additional fields to define:
 - ACLs.
 - macOS flags and resource fork metadata.
 - Windows reparse point metadata.
-- Case sensitivity policy.
+- Root IDs and root display names.
+- Captured source path display information.
+- Root-level case sensitivity policy.
 - Whole-file content references.
 - Chunked content references.
 
@@ -956,12 +977,14 @@ Suggested capabilities:
 
 ### 6.2 Scanner
 
-Scans the source directory and produces candidate entries.
+Scans source roots and produces candidate entries.
 
 Suggested capabilities:
 
+- Resolve configured source roots.
+- Enforce unique root IDs within a snapshot.
 - Walk directories.
-- Apply exclude rules.
+- Apply include and exclude rules.
 - Handle symbolic link policy.
 - Capture filesystem metadata according to the active capture profile.
 - Detect files that change during scanning.
@@ -1125,14 +1148,16 @@ The CLI surface should cover the architecture scope, while individual commands c
 ```text
 kaca init <repository>
 kaca init <repository> --encrypt
-kaca snapshot <source> --repo <repository>
-kaca snapshot <source> --repo <repository> --metadata-capture portable|system|full
+kaca snapshot <source>... --repo <repository>
+kaca snapshot --source <root-id>=<source-path> --source <root-id>=<source-path> --repo <repository>
+kaca snapshot <source>... --repo <repository> --metadata-capture portable|system|full
 kaca list --repo <repository>
 kaca show <snapshot-id> --repo <repository>
 kaca diff <from-snapshot-id> <to-snapshot-id> --repo <repository>
 kaca restore <snapshot-id> <target> --repo <repository>
 kaca restore <snapshot-id> <target> --repo <repository> --metadata-restore portable|system|full
 kaca restore <snapshot-id> <target> --repo <repository> --path <path>
+kaca restore <snapshot-id> <target> --repo <repository> --root <root-id>
 kaca restore <snapshot-id> <target> --repo <repository> --include <pattern> --exclude <pattern>
 kaca verify --repo <repository>
 kaca prune --repo <repository> --keep-daily 7 --keep-weekly 4
@@ -1229,8 +1254,8 @@ When a newer program opens an older repository, it must clearly decide:
 The internal path format should be defined early:
 
 - Use `/` as the path separator inside manifests.
-- Store only repository-relative entry paths.
-- Keep the source directory path only for display and audit.
+- Store only root-scoped snapshot-relative entry paths.
+- Keep captured source root paths only for display and audit.
 - Define the policy for Windows case-insensitive paths and Linux case-sensitive paths.
 
 ### 9.5 Encryption Metadata Leakage
@@ -1315,6 +1340,8 @@ Basic test scenarios:
 - Initialize an empty repository.
 - Create a snapshot for an empty directory.
 - Create a snapshot for a directory with multiple files.
+- Create a snapshot with multiple source roots.
+- Restore a selected root from a multi-root snapshot.
 - Verify that a snapshot record points to a valid snapshot object.
 - Verify that a snapshot object can be read, decompressed, decrypted when needed, and parsed.
 - Update snapshot notes or tags and verify that the snapshot object ID remains stable.
