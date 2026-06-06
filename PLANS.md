@@ -95,7 +95,7 @@ Job configuration is stored in `jobs/*.toml` or a user-level job directory. It c
 
 Changing `config.toml` preserves existing object identity and repository format. Changes that affect immutable repository structure require an explicit repository migration.
 
-Concrete repository binary formats are defined in `docs/repository-format.md`. The layered configuration schema is defined in `docs/configuration.md`. Repository transaction and crash recovery rules are defined in `docs/transactions.md`. Remote synchronization rules are defined in `docs/synchronization.md`. Recovery record rules are defined in `docs/recovery.md`.
+Concrete repository binary formats are defined in `docs/repository-format.md`. Snapshot and tree semantics are defined in `docs/snapshot-model.md`. The layered configuration schema is defined in `docs/configuration.md`. Repository transaction and crash recovery rules are defined in `docs/transactions.md`. Remote synchronization rules are defined in `docs/synchronization.md`. Recovery record rules are defined in `docs/recovery.md`.
 
 ## 3. Core Principles
 
@@ -737,6 +737,8 @@ The immutable metadata stored in the object pool should use a canonical binary e
 
 The object ID for a metadata payload should be computed from the canonical uncompressed metadata bytes before compression and encryption.
 
+Snapshot and tree semantic rules are defined in `docs/snapshot-model.md`.
+
 Mutable snapshot records outside the object pool may use JSON as user-editable catalog data.
 
 ### 3.9 Filesystem Metadata Profiles
@@ -767,7 +769,7 @@ restore_errors = "warn"
 
 Capture profile values:
 
-- `portable` captures repository-relative path, entry type, content reference, logical size, modified time, executable bit, read-only bit, and symbolic link target.
+- `portable` captures root-scoped snapshot-relative path, entry type, target reference, logical size, modified time, executable bit, read-only bit, and symbolic link target.
 - `system` captures `portable` fields plus POSIX mode, uid, gid, user name, group name, and Windows file attributes.
 - `full` captures `system` fields plus ACLs, extended attributes, macOS flags, macOS resource fork metadata, Windows security descriptor, and Windows reparse point metadata.
 

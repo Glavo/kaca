@@ -554,7 +554,7 @@ Tree entry map:
 | 1 | tstr | entry name |
 | 2 | uint | entry type |
 | 3 | uint | logical size |
-| 4 | map / null | content reference |
+| 4 | map / null | target reference |
 | 5 | map | captured metadata |
 
 Entry types:
@@ -604,11 +604,14 @@ Captured metadata map:
 | 3 | bool | executable |
 | 4 | bool | read-only |
 | 5 | tstr / null | symbolic link target |
+| 6 | bstr / null | hard link group ID |
 | 20 | uint / null | POSIX mode |
 | 21 | uint / null | uid |
 | 22 | uint / null | gid |
 | 23 | tstr / null | user name |
 | 24 | tstr / null | group name |
+| 25 | uint / null | POSIX device major |
+| 26 | uint / null | POSIX device minor |
 | 30 | uint / null | Windows file attributes |
 | 40 | array | extended attributes |
 | 41 | array | ACL entries |
