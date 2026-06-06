@@ -95,7 +95,7 @@ Job configuration is stored in `jobs/*.toml` or a user-level job directory. It c
 
 Changing `config.toml` preserves existing object identity and repository format. Changes that affect immutable repository structure require an explicit repository migration.
 
-Concrete repository binary formats are defined in `docs/repository-format.md`. The layered configuration schema is defined in `docs/configuration.md`. Repository transaction and crash recovery rules are defined in `docs/transactions.md`. Remote synchronization rules are defined in `docs/synchronization.md`.
+Concrete repository binary formats are defined in `docs/repository-format.md`. The layered configuration schema is defined in `docs/configuration.md`. Repository transaction and crash recovery rules are defined in `docs/transactions.md`. Remote synchronization rules are defined in `docs/synchronization.md`. Recovery record rules are defined in `docs/recovery.md`.
 
 ## 3. Core Principles
 
@@ -493,6 +493,8 @@ External recovery records are useful when the repository itself is stored on a d
 For encrypted repositories, recovery records protect encrypted physical files. The PAR2 payload repairs damaged bytes without requiring the encryption key. Recovery set manifests and file names may expose repository layout and object sizes, so the format reserves an encrypted recovery manifest mode.
 
 Recovery records can be generated explicitly before automatic recovery scheduling is implemented. Automatic recovery record generation depends on stable pruning and retention semantics.
+
+The recovery record specification is defined in `docs/recovery.md`.
 
 ### 3.6 Remote Repositories and Synchronization
 
@@ -1410,7 +1412,7 @@ Basic test scenarios:
 - Should encrypted repositories always encrypt snapshot manifests?
 - Should mutable snapshot records be encrypted in encrypted repositories?
 - How should password-based key derivation be configured?
-- Should recovery records use an external PAR2 implementation or an internal Reed-Solomon implementation?
+- Which PAR2-compatible implementation is used for version 1 recovery generation?
 - What is the default redundancy percentage for recovery records?
 - Should recovery records protect every snapshot immediately or be generated in batches?
 - Should encrypted repositories encrypt recovery set manifests when recovery records are stored externally?
