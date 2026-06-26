@@ -4,7 +4,9 @@ This document defines the binary repository formats used by `kaca`.
 
 ## 1. Encoding Rules
 
-All fixed-width integers use unsigned big-endian encoding.
+Repository-defined fixed-width integers use unsigned little-endian encoding. This rule applies to fixed headers defined by this document.
+
+Deterministic CBOR bodies use CBOR's own canonical integer encoding. Digest bytes, payload bytes, compressed bytes, and encrypted bytes keep the byte order defined by their own algorithms or source data.
 
 Binary strings are length-delimited by the surrounding structure. Text strings inside metadata payloads are UTF-8 and normalized before encoding.
 
