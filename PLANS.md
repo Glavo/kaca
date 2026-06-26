@@ -68,6 +68,7 @@ Configuration files use a layered model:
 ```text
 command invocation overrides
 job configuration
+profile configuration
 repository-local client configuration
 repository configuration
 user configuration
@@ -82,6 +83,8 @@ Repository configuration is stored in `config.toml`. It contains portable reposi
 - Filesystem metadata capture default.
 - Extension policy.
 
+Profile configuration is stored in `profiles/*.toml` or a user-level profile directory. It contains reusable policy bundles such as metadata defaults, filters, and chunking rules.
+
 Repository-local client configuration is stored in `local/config.toml`. It contains machine-specific and client-specific defaults:
 
 - Remotes.
@@ -95,7 +98,10 @@ Job configuration is stored in `jobs/*.toml` or a user-level job directory. It c
 - Source roots.
 - Schedule expressions.
 - Include and exclude patterns.
+- Applied profiles.
 - Per-job metadata capture override.
+
+Configuration uses typed schema validation, include files, schema-aware merge rules, secret references, origin tracking, and explicit migration rules.
 
 Changing `config.toml` preserves existing object identity and repository format. Changes that affect immutable repository structure require an explicit repository migration.
 
@@ -522,7 +528,7 @@ The synchronization model handles:
 - Mutable snapshot records.
 - Optional recovery record sets.
 - Rebuildable indexes.
-- Repository metadata, user configuration, and format negotiation.
+- Repository metadata, repository configuration, job configuration, profile configuration, and format negotiation.
 
 Immutable objects are content-addressed and can be synchronized by object ID:
 
@@ -887,6 +893,8 @@ repository/
     config.toml
   jobs/
     <job-name>.toml
+  profiles/
+    <profile-name>.toml
   objects/
     ab/
       abcdef...
@@ -908,6 +916,7 @@ Notes:
 - `repository` stores binary internal metadata such as repository ID, repository format version, object format version, hash algorithm, metadata encoding, canonical compression profile, object layout, encryption mode, key derivation public parameters, and creation time.
 - `config.toml` stores repository policy such as retention defaults, recovery record defaults, filesystem metadata capture defaults, and extension policy.
 - `local/config.toml` stores client-local configuration such as remotes, credential references, restore defaults, service settings, and UI preferences.
+- `profiles` stores reusable policy bundles applied by jobs before job-local overrides.
 - `jobs` stores repeatable snapshot job definitions such as source roots, schedules, filters, and per-job capture overrides.
 - `lock` prevents multiple processes from writing to the repository at the same time.
 - `objects` stores untyped physical object envelopes keyed by object ID.

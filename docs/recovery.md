@@ -10,6 +10,8 @@ Protected files may include:
 
 - `repository`.
 - `config.toml`.
+- Job configuration files.
+- Profile configuration files.
 - Snapshot record files.
 - Loose object files.
 - Pack files.
@@ -105,6 +107,8 @@ Default protected file kinds:
 |---|---|
 | `repository` | yes |
 | `repository-config` | yes |
+| `job-config` | yes |
+| `profile-config` | yes |
 | `snapshot-record` | yes |
 | `loose-object` | yes |
 | `pack` | yes |

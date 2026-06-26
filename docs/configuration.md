@@ -11,6 +11,7 @@ Configuration is resolved from ordered layers:
 ```text
 command invocation overrides
 job configuration
+profile configuration
 repository-local client configuration
 repository configuration
 user configuration
@@ -28,6 +29,7 @@ Configuration file locations:
 | User configuration | user configuration directory, `kaca/config.toml` |
 | Repository configuration | `<repository>/config.toml` |
 | Repository-local client configuration | `<repository>/local/config.toml` |
+| Profile configuration | `<repository>/profiles/<profile-name>.toml` or user configuration profile directory |
 | Job configuration | `<repository>/jobs/<job-name>.toml` or user configuration job directory |
 
 The parser accepts the keys defined for the file's layer. Extension data is stored under `[extensions.<name>]`.
@@ -35,6 +37,14 @@ The parser accepts the keys defined for the file's layer. Extension data is stor
 Repository synchronization includes repository configuration and repository state. Repository-local client configuration is resolved by the local client that owns the `local` directory.
 
 Repository and source locations may be local paths or backend locators as defined in `docs/storage-backends.md`.
+
+Configuration files may declare includes:
+
+```toml
+include = ["profiles/common.toml"]
+```
+
+Include paths are resolved relative to the file that declares them. Includes are parsed before the including file, and the including file has higher precedence for fields in the same layer. Include cycles are invalid.
 
 ## 2. Repository Configuration
 
@@ -102,7 +112,76 @@ Retention values are non-negative integers.
 
 `redundancy_percent` is an integer from 1 through 100.
 
-## 3. Client Configuration
+## 3. Profile Configuration
+
+Profile configuration files define reusable policy bundles. Jobs may apply one or more profiles before job-local overrides.
+
+```toml
+profile_version = 1
+name = "minecraft"
+extends = ["default"]
+
+[metadata]
+capture = "portable"
+
+[filters]
+include = ["**"]
+exclude = ["**/logs/**", "**/crash-reports/**"]
+
+[[chunking.rules]]
+id = "minecraft-region"
+glob = "**/region/*.mca"
+strategy = "fixed-size"
+block_size = "1MiB"
+```
+
+### 3.1 Top-Level Keys
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `profile_version` | integer | required | Profile configuration format version. |
+| `name` | string | required | Stable profile name. |
+| `extends` | array of strings | absent | Profiles applied before this profile. |
+
+### 3.2 `[metadata]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `capture` | string | absent | Filesystem metadata capture profile supplied by this profile. |
+
+### 3.3 `[filters]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `include` | array of strings | absent | Include patterns supplied by this profile. |
+| `exclude` | array of strings | absent | Exclude patterns supplied by this profile. |
+
+### 3.4 `[[chunking.rules]]`
+
+Chunking rules are evaluated in order. The first matching rule supplies the chunking strategy for a file unless a higher layer overrides it.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `id` | string | required | Stable rule ID used for keyed merge and diagnostics. |
+| `glob` | glob pattern | required | Snapshot-relative path pattern. |
+| `strategy` | string | required | Chunking strategy. |
+| `block_size` | size | required for `fixed-size` | Fixed chunk size. |
+| `min_size` | size | required for `cdc` | Minimum CDC chunk size. |
+| `avg_size` | size | required for `cdc` | Target average CDC chunk size. |
+| `max_size` | size | required for `cdc` | Maximum CDC chunk size. |
+
+Chunking strategy values:
+
+| Value | Meaning |
+|---|---|
+| `"whole-file"` | Store matching files as a single content object. |
+| `"fixed-size"` | Split matching files into fixed-size chunks. |
+| `"cdc"` | Split matching files with content-defined chunking. |
+| `"adaptive"` | Let the implementation choose from available strategies with recorded diagnostics. |
+
+Profile names use the same syntax as source IDs: `[a-z][a-z0-9._-]{0,63}`.
+
+## 4. Client Configuration
 
 System, user, and repository-local client configuration files use the same schema. Repository-local client configuration is stored at `<repository>/local/config.toml`.
 
@@ -136,14 +215,14 @@ credentials = "keyring:kaca/origin"
 connections = 4
 ```
 
-### 3.1 Top-Level Keys
+### 4.1 Top-Level Keys
 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `config_version` | integer | required | Configuration format version. |
 | `client_id` | string | absent | Stable client identifier for diagnostics and multi-client conflict records. |
 
-### 3.2 `[metadata]`
+### 4.2 `[metadata]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -167,7 +246,7 @@ Metadata profile values:
 | `"fail"` | Treat metadata restore failures as restore failures. |
 | `"ignore"` | Suppress metadata restore failure reporting. |
 
-### 3.3 `[restore]`
+### 4.3 `[restore]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -190,14 +269,14 @@ Metadata profile values:
 | `"rename"` | Restore the conflicting path with a generated conflict suffix. |
 | `"overwrite"` | Apply the configured overwrite behavior. |
 
-### 3.4 `[service]`
+### 4.4 `[service]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | boolean | `false` | Enables background service integration. |
 | `listen` | string | absent | Service listen endpoint. |
 
-### 3.5 `[ui]`
+### 4.5 `[ui]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -212,7 +291,7 @@ Metadata profile values:
 | `"light"` |
 | `"dark"` |
 
-### 3.6 `[[remotes]]`
+### 4.6 `[[remotes]]`
 
 Each remote entry defines one RepositoryStore synchronization target for the active client.
 
@@ -259,13 +338,14 @@ credentials = "file:secrets/origin.credentials"
 
 Plain secret values are stored outside configuration files.
 
-## 4. Job Configuration
+## 5. Job Configuration
 
 Job configuration files define repeatable snapshot tasks.
 
 ```toml
 job_version = 1
 name = "home"
+profiles = ["minecraft"]
 repository = "sftp://backup.example.com/kaca/repository"
 
 [[sources]]
@@ -296,15 +376,16 @@ include = ["**"]
 exclude = []
 ```
 
-### 4.1 Top-Level Keys
+### 5.1 Top-Level Keys
 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `job_version` | integer | required | Job configuration format version. |
 | `name` | string | required | Stable job name. |
 | `repository` | string | absent | Repository locator for user-level job files. |
+| `profiles` | array of strings | absent | Profiles applied before job-local settings. |
 
-### 4.2 `[[sources]]`
+### 5.2 `[[sources]]`
 
 Each source entry defines one tracked root for snapshots created by the job.
 
@@ -334,13 +415,13 @@ Source `kind` values:
 
 Overlapping source paths are valid. Job diagnostics report overlapping sources with their source IDs and paths.
 
-### 4.3 `[metadata]`
+### 5.3 `[metadata]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `capture` | string | resolved | Filesystem metadata capture profile for snapshots created by the job. |
 
-### 4.4 `[schedule]`
+### 5.4 `[schedule]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -349,14 +430,14 @@ Overlapping source paths are valid. Job diagnostics report overlapping sources w
 
 The calendar expression format is a separate scheduler interface decision.
 
-### 4.5 `[filters]`
+### 5.5 `[filters]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `include` | array of strings | absent | Default include patterns for source scanning. |
 | `exclude` | array of strings | absent | Default exclude patterns for source scanning. |
 
-## 5. Extensions
+## 6. Extensions
 
 Extensions use namespaced tables:
 
@@ -368,7 +449,102 @@ value = "custom"
 
 Extension names are lowercase ASCII identifiers containing letters, digits, `_`, and `-`.
 
-## 6. Value Resolution
+## 7. Value Types
+
+Configuration values are parsed according to the schema field type.
+
+| Type | Syntax | Examples |
+|---|---|---|
+| size | string with binary unit | `"256KiB"`, `"64MiB"`, `"1GiB"` |
+| duration | string with time unit | `"30s"`, `"10m"`, `"24h"`, `"30d"` |
+| percentage | integer | `10` |
+| locator | string | `"D:/backup"`, `"s3://bucket/repo"` |
+| glob pattern | string | `"**/region/*.mca"` |
+| credential reference | string | `"keyring:kaca/origin"` |
+| calendar expression | string | `"daily 02:00"` |
+
+Size units use binary powers. Supported suffixes are `B`, `KiB`, `MiB`, `GiB`, and `TiB`.
+
+Duration units use `s`, `m`, `h`, and `d`. Calendar expressions are parsed only by scheduling components.
+
+Locator values follow `docs/storage-backends.md`. Glob patterns match root-scoped snapshot-relative paths.
+
+## 8. Merge Rules
+
+Effective configuration is built with schema-aware merge rules.
+
+General merge rules:
+
+| Field kind | Rule |
+|---|---|
+| scalar | Higher layer replaces lower layer. |
+| map | Keys merge recursively. |
+| unknown map key | Accepted only under `extensions.<name>`. |
+| unkeyed array | Higher layer replaces lower layer. |
+| keyed array | Entries merge by the schema key. |
+
+Keyed array merge rules:
+
+| Field | Key | Rule |
+|---|---|---|
+| `[[remotes]]` | `name` | Higher-layer entry replaces the lower-layer entry with the same name. |
+| `[[sources]]` | `id` | Job-local entries define the job source set. |
+| `[[chunking.rules]]` | `id` | Higher-layer rule replaces the lower-layer rule with the same ID. |
+
+Profile application order:
+
+1. Resolve profile `extends` recursively.
+2. Apply profiles in listed order.
+3. Apply job-local settings.
+4. Apply command invocation overrides.
+
+Profile cycles are invalid. Duplicate profile names at the same layer are invalid.
+
+## 9. Secret Policy
+
+Configuration files store credential references only.
+
+Allowed credential references:
+
+```toml
+credentials = "env:KACA_REMOTE_ORIGIN_PASSWORD"
+credentials = "keyring:kaca/origin"
+credentials = "file:secrets/origin.credentials"
+```
+
+Plaintext password, token, access key, secret key, and private key values are invalid in configuration files. The validator reports keys whose names or values match secret-like patterns unless the field type is credential reference.
+
+## 10. Synchronization and Protection Policy
+
+Repository state protection by file class:
+
+| File class | Synchronize | Recovery records | Notes |
+|---|---|---|---|
+| `repository` | yes | yes | Internal binary repository metadata. |
+| `config.toml` | yes | yes | Portable repository policy. |
+| `jobs/*.toml` | yes | yes | Repeatable job definitions. |
+| `profiles/*.toml` | yes | yes | Reusable policy bundles. |
+| `local/config.toml` | no | optional | Machine-local settings and credential references. |
+| system/user config | no | no | Protected only when explicitly configured as a source. |
+
+Synchronization treats repository configuration, job configuration, and profile configuration as repository state. Repository-local client configuration is evaluated by the client that owns the `local` directory.
+
+## 11. Compatibility and Migration
+
+Configuration files carry explicit format versions.
+
+Compatibility rules:
+
+- Unknown top-level sections are invalid outside `extensions.<name>`.
+- Unknown keys are invalid outside extension tables.
+- Deprecated keys remain readable until the configured migration boundary.
+- A newer required configuration version blocks mutation until migration succeeds.
+- Migration writes a full replacement configuration file through repository transaction rules.
+- Diagnostics include old key, new key, source file, and migration action.
+
+`kaca config validate` validates every configuration layer. `kaca config migrate` rewrites compatible old configuration files to the current schema.
+
+## 12. Value Resolution
 
 Effective values are resolved with origin tracking. Diagnostics and `config get` output include the layer and file path that supplied each value.
 
@@ -377,6 +553,7 @@ Example resolution for snapshot metadata capture:
 ```text
 command invocation override
 job [metadata].capture
+profile [metadata].capture
 repository-local client [metadata].capture
 repository [policy.metadata].default_capture
 user [metadata].capture
@@ -394,13 +571,13 @@ system [restore]
 built-in default
 ```
 
-Remote definitions are keyed by remote name. A higher-layer remote with the same name replaces the lower-layer remote.
+Repository endpoint definitions are keyed by remote name. A higher-layer endpoint with the same name replaces the lower-layer endpoint.
 
-## 7. Validation Rules
+## 13. Validation Rules
 
 The parser validates:
 
-- Configuration and job format versions.
+- Configuration, profile, and job format versions.
 - Allowed sections for each configuration layer.
 - Field types.
 - Enum values.
@@ -413,5 +590,11 @@ The parser validates:
 - Unique source IDs within each job.
 - Valid source ID syntax.
 - Valid source root kind values.
+- Valid include paths and include cycle absence.
+- Valid profile references and profile cycle absence.
+- Valid typed values for size, duration, locator, glob pattern, credential reference, and calendar expression.
+- Valid keyed merge identifiers.
+- Secret policy compliance.
+- Migration compatibility for deprecated keys and old format versions.
 
 Invalid configuration files produce diagnostics with file path, layer, table name, key name, invalid value, and expected value set.
