@@ -57,10 +57,25 @@ config_version = 1
 default_capture = "portable"
 
 [policy.retention]
-keep_daily = 7
-keep_weekly = 4
-keep_monthly = 12
-keep_yearly = 0
+enabled = true
+protect_pinned = true
+
+[[policy.retention.rules]]
+id = "latest"
+type = "latest"
+count = 20
+
+[[policy.retention.rules]]
+id = "daily"
+type = "interval"
+interval = "P1D"
+keep_for = "P30D"
+
+[[policy.retention.rules]]
+id = "monthly"
+type = "interval"
+interval = "P1M"
+keep_for = "P2Y"
 
 [policy.recovery]
 enabled = false
@@ -86,15 +101,32 @@ enabled = true
 ### 2.3 `[policy.retention]`
 
 | Key | Type | Default | Description |
-|---|---:|---:|---|
-| `keep_daily` | integer | 7 | Number of daily snapshots retained by default. |
-| `keep_weekly` | integer | 4 | Number of weekly snapshots retained by default. |
-| `keep_monthly` | integer | 12 | Number of monthly snapshots retained by default. |
-| `keep_yearly` | integer | 0 | Number of yearly snapshots retained by default. |
+|---|---|---|---|
+| `enabled` | boolean | `true` | Enables automatic retention-based snapshot pruning. |
+| `protect_pinned` | boolean | `true` | Keeps pinned snapshot records outside retention pruning. |
 
-Retention values are non-negative integers.
+Retention rules select snapshot records that remain protected from pruning. The final retention set is the union of all rule results and pinned snapshots when `protect_pinned = true`.
 
-### 2.4 `[policy.recovery]`
+### 2.4 `[[policy.retention.rules]]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `id` | string | required | Stable rule ID used for keyed merge and diagnostics. |
+| `type` | string | required | Retention rule type. |
+| `count` | integer | required for `latest` | Number of newest matching snapshot records retained by the rule. |
+| `interval` | temporal amount | required for `interval` | Time spacing used to select representative snapshot records. |
+| `keep_for` | temporal amount | required for `interval` | Lookback window evaluated from the pruning reference time. |
+
+Retention rule types:
+
+| Value | Meaning |
+|---|---|
+| `"latest"` | Retain the newest `count` snapshot records. |
+| `"interval"` | Retain representative snapshot records spaced by `interval` within `keep_for`. |
+
+`count` is a positive integer.
+
+### 2.5 `[policy.recovery]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -456,7 +488,9 @@ Configuration values are parsed according to the schema field type.
 | Type | Syntax | Examples |
 |---|---|---|
 | size | string with binary unit | `"256KiB"`, `"64MiB"`, `"1GiB"` |
-| duration | string with time unit | `"30s"`, `"10m"`, `"24h"`, `"30d"` |
+| duration | ISO-8601 duration string | `"PT30S"`, `"PT5M"`, `"PT24H"` |
+| period | ISO-8601 period string | `"P30D"`, `"P6M"`, `"P2Y"` |
+| temporal amount | ISO-8601 duration or period string | `"PT1H"`, `"P1D"`, `"P1M"` |
 | percentage | integer | `10` |
 | locator | string | `"D:/backup"`, `"s3://bucket/repo"` |
 | glob pattern | string | `"**/region/*.mca"` |
@@ -465,7 +499,15 @@ Configuration values are parsed according to the schema field type.
 
 Size units use binary powers. Supported suffixes are `B`, `KiB`, `MiB`, `GiB`, and `TiB`.
 
-Duration units use `s`, `m`, `h`, and `d`. Calendar expressions are parsed only by scheduling components.
+Duration values use `java.time.Duration` semantics and represent fixed elapsed time. Duration fields accept only time-based ISO-8601 `PT...` values such as `PT30S`, `PT5M`, and `PT24H`.
+
+Period values use `java.time.Period` semantics and represent calendar-based date periods. Period fields accept only date-based ISO-8601 values such as `P30D`, `P6M`, and `P2Y`.
+
+Temporal amount fields accept either a duration or a period. The literal syntax determines the temporal kind: `PT...` values are fixed durations, and date-based `P...` values are calendar periods. Mixed date-time values such as `P1DT12H` are invalid.
+
+Short unit forms such as `30s`, `10m`, `24h`, and `30d` are not valid configuration values.
+
+Calendar expressions are parsed only by scheduling components.
 
 Locator values follow `docs/storage-backends.md`. Glob patterns match root-scoped snapshot-relative paths.
 
@@ -490,6 +532,7 @@ Keyed array merge rules:
 | `[[remotes]]` | `name` | Higher-layer entry replaces the lower-layer entry with the same name. |
 | `[[sources]]` | `id` | Job-local entries define the job source set. |
 | `[[chunking.rules]]` | `id` | Higher-layer rule replaces the lower-layer rule with the same ID. |
+| `[[policy.retention.rules]]` | `id` | Higher-layer rule replaces the lower-layer rule with the same ID. |
 
 Profile application order:
 
@@ -581,7 +624,7 @@ The parser validates:
 - Allowed sections for each configuration layer.
 - Field types.
 - Enum values.
-- Non-negative retention values.
+- Valid retention rule structure.
 - Recovery redundancy range.
 - Unique remote names after layer resolution.
 - Extension table names.
@@ -592,7 +635,7 @@ The parser validates:
 - Valid source root kind values.
 - Valid include paths and include cycle absence.
 - Valid profile references and profile cycle absence.
-- Valid typed values for size, duration, locator, glob pattern, credential reference, and calendar expression.
+- Valid typed values for size, duration, period, temporal amount, locator, glob pattern, credential reference, and calendar expression.
 - Valid keyed merge identifiers.
 - Secret policy compliance.
 - Migration compatibility for deprecated keys and old format versions.

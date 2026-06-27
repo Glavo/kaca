@@ -78,7 +78,7 @@ built-in defaults
 
 Repository configuration is stored in `config.toml`. It contains portable repository policy:
 
-- Retention defaults.
+- Retention rule defaults.
 - Recovery record defaults.
 - Filesystem metadata capture default.
 - Extension policy.
@@ -102,6 +102,8 @@ Job configuration is stored in `jobs/*.toml` or a user-level job directory. It c
 - Per-job metadata capture override.
 
 Configuration uses typed schema validation, include files, schema-aware merge rules, secret references, origin tracking, and explicit migration rules.
+
+Temporal configuration values use ISO-8601 duration and period strings. Short unit forms are not part of the initial configuration format.
 
 Changing `config.toml` preserves existing object identity and repository format. Changes that affect immutable repository structure require an explicit repository migration.
 
