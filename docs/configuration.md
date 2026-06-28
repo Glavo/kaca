@@ -160,8 +160,17 @@ extends = ["default"]
 capture = "portable"
 
 [filters]
-include = ["**"]
-exclude = ["**/logs/**", "**/crash-reports/**"]
+default_action = "include"
+
+[[filters.rules]]
+id = "exclude-logs"
+action = "exclude"
+pattern = "logs/**"
+
+[[filters.rules]]
+id = "exclude-crash-reports"
+action = "exclude"
+pattern = "crash-reports/**"
 
 [[chunking.rules]]
 id = "minecraft-region"
@@ -186,10 +195,7 @@ block_size = "1MiB"
 
 ### 3.3 `[filters]`
 
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `include` | array of strings | absent | Include patterns supplied by this profile. |
-| `exclude` | array of strings | absent | Exclude patterns supplied by this profile. |
+The `[filters]` table uses the shared filter schema defined in Section 7. Profile filter rules are applied when the profile is applied.
 
 ### 3.4 `[[chunking.rules]]`
 
@@ -390,8 +396,12 @@ profiles = ["minecraft-world"]
 capture = "portable"
 
 [filters]
-include = ["**"]
-exclude = []
+default_action = "include"
+
+[[filters.rules]]
+id = "exclude-cache"
+action = "exclude"
+pattern = "cache/**"
 ```
 
 ### 5.1 Top-Level Keys
@@ -439,10 +449,7 @@ Overlapping source paths are valid. Each source remains a separate logical root 
 
 ### 5.3 `[filters]`
 
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `include` | array of strings | absent | Default include patterns for this source. |
-| `exclude` | array of strings | absent | Default exclude patterns for this source. |
+The `[filters]` table uses the shared filter schema defined in Section 7. Source filter rules are source defaults inherited by jobs that reference the source.
 
 ## 6. Job Configuration
 
@@ -456,8 +463,19 @@ repository = "sftp://backup.example.com/kaca/repository"
 
 [[source_refs]]
 source = "instance"
-include = ["**"]
-exclude = ["saves", "saves/**"]
+
+[source_refs.filters]
+default_action = "include"
+
+[[source_refs.filters.rules]]
+id = "exclude-saves-root"
+action = "exclude"
+pattern = "saves"
+
+[[source_refs.filters.rules]]
+id = "exclude-saves-children"
+action = "exclude"
+pattern = "saves/**"
 
 [[source_refs]]
 source = "world-a"
@@ -471,8 +489,12 @@ enabled = true
 calendar = "daily 02:00"
 
 [filters]
-include = ["**"]
-exclude = []
+default_action = "include"
+
+[[filters.rules]]
+id = "exclude-temp"
+action = "exclude"
+pattern = "tmp/**"
 ```
 
 ### 6.1 Top-Level Keys
@@ -493,10 +515,9 @@ Each source reference selects one source definition for snapshots created by the
 | `source` | string | absent | Current source name used for user-authored configuration. |
 | `source_id` | UUID string | absent | Immutable source ID used for generated, migration, and repair configuration. |
 | `profiles` | array of strings | absent | Profiles applied for this source binding. |
-| `include` | array of strings | resolved | Include patterns for this source binding. |
-| `exclude` | array of strings | resolved | Exclude patterns for this source binding. |
+| `filters` | table | resolved | Source binding filter rules using the shared filter schema. |
 
-Each source reference contains exactly one of `source` or `source_id`. The `source` field resolves through the current source name table. The `source_id` field resolves directly to the matching source definition.
+Each source reference contains exactly one of `source` or `source_id`. The `source` field resolves through the current source name table. The `source_id` field resolves directly to the matching source definition. A source reference may contain a nested `[source_refs.filters]` table and `[[source_refs.filters.rules]]` entries.
 
 Each resolved source reference expands to one snapshot root. The snapshot root identity is the resolved source ID. Display paths use the captured source name and relative path.
 
@@ -525,12 +546,68 @@ The calendar expression format is a separate scheduler interface decision.
 
 ### 6.6 `[filters]`
 
+The `[filters]` table uses the shared filter schema defined in Section 7. Job filter rules are inherited by every source reference in the job unless a source reference overrides the effective rule list.
+
+## 7. Filter Configuration
+
+Filter tables appear as `[filters]` under profiles, sources, and jobs. Source references use `[source_refs.filters]`. All filter tables use the same schema.
+
+```toml
+[filters]
+default_action = "include"
+reset = false
+
+[[filters.rules]]
+id = "exclude-logs"
+action = "exclude"
+pattern = "logs/**"
+
+[[filters.rules]]
+id = "include-latest-log"
+action = "include"
+pattern = "logs/latest.log"
+```
+
+### 7.1 `[filters]`
+
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `include` | array of strings | absent | Default include patterns for source bindings. |
-| `exclude` | array of strings | absent | Default exclude patterns for source bindings. |
+| `default_action` | string | `"include"` | Action used when no rule matches an entry. |
+| `reset` | boolean | `false` | Clears accumulated lower-layer rules before applying local rules. |
 
-## 7. Extensions
+`default_action` values:
+
+| Value | Meaning |
+|---|---|
+| `"include"` | Include unmatched entries. |
+| `"exclude"` | Exclude unmatched entries. |
+
+### 7.2 `[[filters.rules]]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `id` | string | required | Stable rule ID used for replacement and diagnostics. |
+| `action` | string | required | Rule action. |
+| `pattern` | glob pattern | required | Source-relative path pattern. |
+
+Filter rule IDs use the same syntax as source names: `[a-z][a-z0-9._-]{0,63}`.
+
+Filter rule actions:
+
+| Value | Meaning |
+|---|---|
+| `"include"` | Include matching entries. |
+| `"exclude"` | Exclude matching entries. |
+
+Filter patterns match source-relative paths using `/` separators. They do not include the source name prefix.
+
+Effective filter construction processes filter tables in source binding application order. The effective `default_action` is resolved as a scalar in the same order, starting from `"include"`. If a filter table has `reset = true`, the accumulated rule list is cleared before local rules are applied. When a local rule has the same `id` as an accumulated rule, the accumulated rule is removed and the local rule is appended at the current position. Rules without matching IDs are appended.
+
+Entry matching starts with `default_action` and then evaluates rules in order. Each matching rule sets the current action. The final action after the last matching rule determines whether the entry is included. Directory traversal may prune an excluded directory only when no later include rule can match a descendant path.
+
+Snapshot filter summaries record the resolved default action and ordered effective rule list.
+
+## 8. Extensions
 
 Extensions use namespaced tables:
 
@@ -542,7 +619,7 @@ value = "custom"
 
 Extension names are lowercase ASCII identifiers containing letters, digits, `_`, and `-`.
 
-## 8. Value Types
+## 9. Value Types
 
 Configuration values are parsed according to the schema field type.
 
@@ -571,9 +648,9 @@ Short unit forms such as `30s`, `10m`, `24h`, and `30d` are not valid configurat
 
 Calendar expressions are parsed only by scheduling components.
 
-UUID string values use canonical lowercase text with hyphen separators. Locator values follow `docs/storage-backends.md`. Glob patterns match source-scoped display paths such as `<source-name>/<relative-path>`.
+UUID string values use canonical lowercase text with hyphen separators. Locator values follow `docs/storage-backends.md`. Glob pattern fields define their own match root. Filter rule patterns are source-relative; chunking rule patterns are source-scoped display paths such as `<source-name>/<relative-path>`.
 
-## 9. Merge Rules
+## 10. Merge Rules
 
 Effective configuration is built with schema-aware merge rules.
 
@@ -593,6 +670,7 @@ Keyed array merge rules:
 |---|---|---|
 | `[[remotes]]` | `name` | Higher-layer entry replaces the lower-layer entry with the same name. |
 | `[[source_refs]]` | resolved `source_id` | Job-local entries define the job source reference set. |
+| `[[filters.rules]]` | `id` | A same-ID local rule removes the accumulated rule and appends the local rule. |
 | `[[chunking.rules]]` | `id` | Higher-layer rule replaces the lower-layer rule with the same ID. |
 | `[[policy.retention.rules]]` | `id` | Higher-layer rule replaces the lower-layer rule with the same ID. |
 
@@ -609,7 +687,7 @@ Source binding application order:
 
 Profile cycles are invalid. Duplicate profile names at the same layer are invalid.
 
-## 10. Secret Policy
+## 11. Secret Policy
 
 Configuration files store credential references only.
 
@@ -623,7 +701,7 @@ credentials = "file:secrets/origin.credentials"
 
 Plaintext password, token, access key, secret key, and private key values are invalid in configuration files. The validator reports keys whose names or values match secret-like patterns unless the field type is credential reference.
 
-## 11. Synchronization and Protection Policy
+## 12. Synchronization and Protection Policy
 
 Repository state protection by file class:
 
@@ -639,7 +717,7 @@ Repository state protection by file class:
 
 Synchronization treats repository configuration, source configuration, job configuration, and profile configuration as repository state. Repository-local client configuration is evaluated by the client that owns the `local` directory.
 
-## 12. Compatibility and Migration
+## 13. Compatibility and Migration
 
 Configuration files carry explicit format versions.
 
@@ -654,7 +732,7 @@ Compatibility rules:
 
 `kaca config validate` validates every configuration layer. `kaca config migrate` rewrites compatible old configuration files to the current schema.
 
-## 13. Value Resolution
+## 14. Value Resolution
 
 Effective values are resolved with origin tracking. Diagnostics and `config get` output include the layer and file path that supplied each value.
 
@@ -685,7 +763,7 @@ built-in default
 
 Repository endpoint definitions are keyed by remote name. A higher-layer endpoint with the same name replaces the lower-layer endpoint.
 
-## 14. Validation Rules
+## 15. Validation Rules
 
 The parser validates:
 
@@ -708,9 +786,10 @@ The parser validates:
 - Matching repository source file names and source names.
 - Valid source root kind values.
 - Valid source references by source name or source ID.
-- Valid include paths and include cycle absence.
+- Valid include-file paths and include cycle absence.
 - Valid profile references and profile cycle absence.
 - Valid typed values for size, duration, period, temporal amount, UUID string, locator, glob pattern, credential reference, and calendar expression.
+- Valid filter rule IDs, actions, patterns, reset flags, and default actions.
 - Valid keyed merge identifiers.
 - Secret policy compliance.
 - Migration compatibility for deprecated keys and old format versions.

@@ -526,8 +526,25 @@ Source filter summary map:
 
 | Key | Type | Field |
 |---:|---|---|
-| 1 | array | include patterns |
-| 2 | array | exclude patterns |
+| 1 | uint | default action |
+| 2 | array | ordered filter rules |
+
+Filter action IDs:
+
+| ID | Action |
+|---:|---|
+| 1 | include |
+| 2 | exclude |
+
+Filter rule summary map:
+
+| Key | Type | Field |
+|---:|---|---|
+| 1 | tstr | rule ID |
+| 2 | uint | action |
+| 3 | tstr | source-relative glob pattern |
+
+The source filter summary stores the resolved effective filter for the source root at snapshot creation time.
 
 For a directory source root, `root tree reference` points to the root directory tree when tree payloads are used. `direct entries` stores root directory entries when the snapshot embeds entries directly.
 

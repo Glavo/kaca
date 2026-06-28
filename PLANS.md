@@ -101,13 +101,15 @@ Job configuration is stored in `jobs/*.toml` or a user-level job directory. It c
 
 - Source references.
 - Schedule expressions.
-- Include and exclude patterns.
+- Ordered filter rules.
 - Applied profiles.
 - Per-job metadata capture override.
 
-Configuration uses typed schema validation, include files, schema-aware merge rules, secret references, origin tracking, and explicit migration rules.
+Configuration uses typed schema validation, include files, schema-aware merge rules, ordered filter rules, secret references, origin tracking, and explicit migration rules.
 
 Temporal configuration values use ISO-8601 duration and period strings. Short unit forms are not part of the initial configuration format.
+
+Filter configuration uses ordered rules with include and exclude actions. Rules from applied layers are appended in source binding order, and the last matching rule determines the effective action.
 
 Changing `config.toml` preserves existing object identity and repository format. Changes that affect immutable repository structure require an explicit repository migration.
 
@@ -817,7 +819,7 @@ Capture profile resolution uses command invocation overrides, job configuration,
 
 The snapshot model should support sparse restore: restoring only selected paths or path patterns from a snapshot.
 
-Simple sparse behavior can be implemented by loading the snapshot manifest and filtering entries. Path filters may include a source name selector. Commands resolve source names to source IDs before matching snapshot roots:
+Simple sparse behavior can be implemented by loading the snapshot manifest and filtering entries. Path filters may include a source name selector. Commands resolve source names to source IDs before matching snapshot roots. Command-line include and exclude options are converted to ordered filter rules:
 
 ```text
 kaca restore <snapshot-id> <target> --path docs/readme.md
@@ -928,7 +930,7 @@ Notes:
 - `local/config.toml` stores client-local configuration such as remotes, credential references, restore defaults, service settings, and UI preferences.
 - `sources` stores stable source definitions referenced by jobs.
 - `profiles` stores reusable policy bundles applied by sources, jobs, and source references before local overrides.
-- `jobs` stores repeatable snapshot job definitions such as source references, schedules, filters, and per-job capture overrides.
+- `jobs` stores repeatable snapshot job definitions such as source references, schedules, ordered filter rules, and per-job capture overrides.
 - `lock` prevents multiple processes from writing to the repository at the same time.
 - `objects` stores untyped physical object envelopes keyed by object ID.
 - `packs` stores immutable packed object files and pack indexes.
@@ -1026,7 +1028,7 @@ Suggested capabilities:
 - Resolve configured source references to source definitions.
 - Enforce unique source IDs within a snapshot.
 - Walk directories.
-- Apply include and exclude rules.
+- Apply ordered filter rules.
 - Handle symbolic link policy.
 - Capture filesystem metadata according to the active capture profile.
 - Detect files that change during scanning.
@@ -1122,7 +1124,7 @@ Suggested capabilities:
 
 - Restore a complete snapshot.
 - Restore a single path.
-- Restore selected paths by include and exclude patterns.
+- Restore selected paths by ordered filter rules.
 - Detect target path conflicts.
 - Support dry run.
 - Restore filesystem metadata according to the active restore profile.
@@ -1402,7 +1404,7 @@ Basic test scenarios:
 - Restore a complete snapshot.
 - Restore a single file.
 - Restore selected paths and verify that unrelated paths remain absent.
-- Restore with include and exclude patterns.
+- Restore with command-line include and exclude filters.
 - Create a snapshot with the default `portable` metadata capture profile.
 - Restore with the default `portable` metadata restore profile.
 - Create a snapshot with the `system` metadata capture profile on a supported platform.
@@ -1466,7 +1468,7 @@ Basic test scenarios:
 - Should long-lived sparse checkout state be stored in the target directory or in the repository?
 - Is a database index such as SQLite needed?
 - How should unsupported platform metadata fields be represented in restore reports?
-- Should exclude rules be compatible with `.gitignore` syntax?
+- Should filter pattern syntax be compatible with `.gitignore` syntax?
 - Should restore overwrite target files by default?
 - Should `snapshot` fail, skip, or produce a partial snapshot when it sees unstable files?
 
