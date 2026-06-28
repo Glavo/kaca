@@ -121,8 +121,8 @@ Default protected file kinds:
 | `pack-index` | yes |
 | `recovery-manifest` | yes |
 | `rebuildable-index` | no |
-| `temporary-file` | no |
-| `lock-file` | no |
+| `local-temporary-file` | no |
+| `local-lock-file` | no |
 
 The protected file set is immutable for a recovery set. A later repository state requires a new recovery set. Client-local workspace files, sidecar local files, temporary files, and lock files are not part of the default protected set.
 

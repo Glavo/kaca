@@ -95,13 +95,13 @@ A file-tree local repository is a workspace that contains the shared root plus c
     config.toml
     remotes/
     indexes/
-  tmp/
-  lock
+    tmp/
+    lock
 ```
 
-`<workspace>/share` is the RepositoryStore shared root. `<workspace>/local`, `<workspace>/tmp`, and `<workspace>/lock` are client-local workspace state.
+`<workspace>/share` is the RepositoryStore shared root. `<workspace>/local` is client-local workspace state and contains local configuration, caches, temporary files, and the local process lock.
 
-Single-file repository modes store the shared repository root directly inside the archive or bundle. They do not store `share/`, `local/`, `tmp/`, or `lock` entries inside the single-file container. Client-local state for a single-file repository is stored in a sidecar workspace:
+Single-file repository modes store the shared repository root directly inside the archive or bundle. They do not store `share/` or `local/` entries inside the single-file container. Client-local state for a single-file repository is stored in a sidecar workspace:
 
 ```text
 world.kaca.zip
@@ -127,9 +127,9 @@ Backends declare capabilities before mutation.
 | `stable-read-after-write` | Can verify a just-written item through the same backend. |
 | `append` | Can append records to an existing physical file. |
 | `server-side-copy` | Can clone or copy repository data within the backend. |
-| `lock` | Can provide repository writer coordination. |
+| `writer-coordination` | Can provide cross-client writer coordination without adding synchronized repository files. |
 
-Repository mutation adapts to backend capabilities. Missing capabilities require transaction emulation, full-file rewrite, conflict records, or read-only mode.
+Repository mutation adapts to backend capabilities. Missing capabilities require transaction emulation, full-file rewrite, conflict records, or read-only mode. Writer coordination is backend operational state and is excluded from synchronization inventory, recovery protection, and shared repository layout.
 
 ## 5. Execution Sites
 

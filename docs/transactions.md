@@ -20,10 +20,10 @@ Indexes are rebuildable and do not define object reachability.
 
 Mutating commands acquire the repository writer lock before publishing shared repository state. Multiple readers may run while no writer is publishing a partially visible state.
 
-In a file-tree workspace, the writer lock is stored at:
+In a file-tree workspace, the local process lock is stored at:
 
 ```text
-lock
+local/lock
 ```
 
 The lock payload records:
@@ -36,7 +36,7 @@ The lock payload records:
 - Command name.
 - Random lock token.
 
-Lock acquisition uses atomic file creation. Lock release deletes the lock only when the stored lock token matches the owning process token. The lock is client-local workspace state and is not stored inside the shared repository root.
+Local lock acquisition uses atomic file creation. Lock release deletes the lock only when the stored lock token matches the owning process token. The local lock is client-local workspace state and is not stored inside the shared repository root. Cross-client writer coordination is provided by the RepositoryStore backend and is not represented as synchronized repository content.
 
 Stale lock recovery is an explicit repair operation. Normal commands report the stale lock candidate and stop.
 
@@ -45,7 +45,7 @@ Stale lock recovery is an explicit repair operation. Normal commands report the 
 In a file-tree workspace, each mutating command writes temporary files under:
 
 ```text
-tmp/transactions/<transaction-id>/
+local/tmp/transactions/<transaction-id>/
 ```
 
 Transaction IDs are opaque ASCII strings containing creation time and random entropy:
@@ -157,7 +157,7 @@ Interrupted deletion leaves either the old file or no file. `verify` and `repair
 
 ## 9. Crash Recovery
 
-Temporary transaction directories are non-authoritative. After confirming that no writer lock is active, `repair` may remove incomplete transaction directories.
+Temporary transaction directories are non-authoritative. After confirming that no local writer lock or backend writer coordination lease is active, `repair` may remove incomplete transaction directories.
 
 Crash recovery rules:
 

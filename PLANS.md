@@ -933,8 +933,8 @@ repository/
     indexes/
       file-state/
         <source-id>
-  tmp/
-  lock
+    tmp/
+    lock
 ```
 
 The RepositoryStore logical root is the shared repository root. In a file-tree workspace it is `share/`. In single-file archive and bundle repositories it is the archive or bundle internal root and does not contain a `share/` directory.
@@ -969,10 +969,10 @@ Notes:
 - `local/config.toml` stores client-local configuration such as restore defaults, service settings, UI preferences, and default remote selection.
 - `local/remotes` stores client-local remote overrides such as credential references, connection timeouts, and client-local transfer limits.
 - `local/indexes` stores client-local rebuildable caches such as source file-state scan caches.
-- `lock` prevents multiple local processes from writing to the repository workspace at the same time.
-- `tmp` stores incomplete local temporary writes.
+- `local/lock` prevents multiple local processes from writing to the same repository workspace at the same time.
+- `local/tmp` stores incomplete local temporary writes.
 
-RepositoryStore paths are written relative to the shared repository root. Workspace paths such as `local/`, `tmp/`, and `lock` are not synchronized repository state.
+RepositoryStore paths are written relative to the shared repository root. Workspace paths under `local/`, including `local/tmp` and `local/lock`, are not synchronized repository state.
 
 The concrete binary formats for `repository`, object envelopes, structured payloads, pack files, and pack indexes are defined in `docs/repository-format.md`.
 

@@ -57,13 +57,7 @@ A file-tree workspace stores this layout under `share/`. Single-file archive and
 
 Provider-specific backends may map this layout to native objects, keys, archive entries, bundle segments, or API resources. The logical synchronization protocol still uses repository IDs, object IDs, pack IDs, snapshot record IDs, and recovery set IDs.
 
-Temporary endpoint writes use backend-local staging. File-exposing shared roots may use:
-
-```text
-tmp/uploads/<client-id>/<transfer-id>/
-```
-
-Transfer IDs are opaque ASCII strings containing creation time and random entropy. Temporary upload paths are non-authoritative and are not synchronized as repository state.
+Temporary endpoint writes use backend-local staging outside the synchronized shared repository layout. Transfer IDs are opaque ASCII strings containing creation time and random entropy. Temporary upload paths are non-authoritative and are not synchronized as repository state.
 
 ## 4. Inventory
 
