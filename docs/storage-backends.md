@@ -52,10 +52,10 @@ Repository backend kinds:
 
 | Kind | Mode | Description |
 |---|---|---|
-| `file-tree` | active | Repository layout stored as files and directories. |
-| `sftp-tree` | active | Repository layout stored through SFTP. |
-| `s3-object` | active | Repository layout mapped to object keys. |
-| `webdav-tree` | active | Repository layout stored through WebDAV resources. |
+| `file-tree` | active | Local repository workspace stored as files and directories. |
+| `sftp-tree` | active | Shared repository layout stored through SFTP. |
+| `s3-object` | active | Shared repository layout mapped to object keys. |
+| `webdav-tree` | active | Shared repository layout stored through WebDAV resources. |
 | `rest` | active | Repository operations exposed by a `kaca` repository service. |
 | `zip-archive` | archive | Single-file ZIP repository archive. |
 | `sevenzip-archive` | archive | Single-file 7z repository archive. |
@@ -71,6 +71,47 @@ RepositoryStore operations:
 - List, read, and publish recovery record sets.
 - Acquire writer coordination when the backend supports it.
 - Materialize transactions or emulate transaction semantics through staging.
+
+### 3.1 Repository Layout Roots
+
+A RepositoryStore exposes the shared repository root. Paths such as `repository`, `config.toml`, `objects/`, `snapshots/`, `recovery/`, and `indexes/` are relative to that shared root.
+
+A file-tree local repository is a workspace that contains the shared root plus client-local state:
+
+```text
+<workspace>/
+  share/
+    repository
+    config.toml
+    sources/
+    jobs/
+    profiles/
+    remotes/
+    objects/
+    snapshots/
+    recovery/
+    indexes/
+  local/
+    config.toml
+    remotes/
+    indexes/
+  tmp/
+  lock
+```
+
+`<workspace>/share` is the RepositoryStore shared root. `<workspace>/local`, `<workspace>/tmp`, and `<workspace>/lock` are client-local workspace state.
+
+Single-file repository modes store the shared repository root directly inside the archive or bundle. They do not store `share/`, `local/`, `tmp/`, or `lock` entries inside the single-file container. Client-local state for a single-file repository is stored in a sidecar workspace:
+
+```text
+world.kaca.zip
+world.kaca.local/
+  config.toml
+  remotes/
+  indexes/
+  tmp/
+  lock
+```
 
 ## 4. Backend Capabilities
 
@@ -119,7 +160,7 @@ zip:file:///D:/archives/world.kaca.zip
 bundle:file:///D:/archives/world.kaca.bundle
 ```
 
-Local paths without a URI scheme are `file-tree` repository locators.
+Local paths without a URI scheme are `file-tree` repository workspace locators. The RepositoryStore shared root is the `share/` directory inside that workspace.
 
 ## 7. Source Locators
 
@@ -139,11 +180,11 @@ Local paths without a URI scheme are `local-filesystem` source locators.
 
 ## 8. Single-File Repository Modes
 
-Single-file repository modes store repository state inside one file.
+Single-file repository modes store the shared repository root inside one file.
 
 ### 8.1 ZIP Archive
 
-`zip-archive` stores the repository layout inside a ZIP file.
+`zip-archive` stores the shared repository layout inside a ZIP file.
 
 ZIP archive rules:
 
@@ -154,7 +195,7 @@ ZIP archive rules:
 
 ### 8.2 7z Archive
 
-`sevenzip-archive` stores the repository layout inside a 7z file.
+`sevenzip-archive` stores the shared repository layout inside a 7z file.
 
 7z archive rules:
 

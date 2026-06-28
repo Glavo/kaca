@@ -78,33 +78,33 @@ system configuration
 built-in defaults
 ```
 
-Repository configuration is stored in `config.toml`. It contains portable repository policy:
+Repository configuration is stored in `share/config.toml` for file-tree workspaces and `config.toml` at the shared repository root for RepositoryStore backends. It contains portable repository policy:
 
 - Retention rule defaults.
 - Recovery record defaults.
 - Filesystem metadata capture default.
 - Extension policy.
 
-Source configuration is stored in `sources/*.toml` or a user-level source directory. It contains stable tracked root definitions such as immutable `source_id` UUID, mutable source name, source kind, current path, display name, default profiles, filters, and metadata policy.
+Source configuration is stored in `share/sources/*.toml` for file-tree workspaces, `sources/*.toml` at the shared repository root for RepositoryStore backends, or a user-level source directory. It contains stable tracked root definitions such as immutable `source_id` UUID, mutable source name, source kind, current path, display name, default profiles, filters, and metadata policy.
 
-Profile configuration is stored in `profiles/*.toml` or a user-level profile directory. It contains reusable policy bundles such as metadata defaults, filters, and chunking rules.
+Profile configuration is stored in `share/profiles/*.toml` for file-tree workspaces, `profiles/*.toml` at the shared repository root for RepositoryStore backends, or a user-level profile directory. It contains reusable policy bundles such as metadata defaults, filters, and chunking rules.
 
-Remote configuration is stored in `remotes/*.toml`. It contains portable synchronization endpoint definitions such as immutable `remote_id` UUID, mutable remote name, backend kind, locator, trust level, and sync policy.
+Remote configuration is stored in `share/remotes/*.toml` for file-tree workspaces and `remotes/*.toml` at the shared repository root for RepositoryStore backends. It contains portable synchronization endpoint definitions such as immutable `remote_id` UUID, mutable remote name, backend kind, locator, trust level, and sync policy.
 
-Repository-local client configuration is stored in `local/config.toml`. It contains machine-specific and client-specific defaults:
+Repository-local client configuration is stored in `local/config.toml` in a file-tree workspace or in the sidecar local workspace for a single-file repository. It contains machine-specific and client-specific defaults:
 
 - Restore defaults.
 - UI preferences.
 - Service settings.
 - Default remote selection.
 
-Repository-local remote overrides are stored in `local/remotes/*.toml`. They contain machine-local remote settings:
+Repository-local remote overrides are stored in `local/remotes/*.toml` in a file-tree workspace or in the sidecar local workspace for a single-file repository. They contain machine-local remote settings:
 
 - Credential references.
 - Connection timeouts.
 - Client-local transfer limits.
 
-Job configuration is stored in `jobs/*.toml` or a user-level job directory. It contains repeatable snapshot task definitions:
+Job configuration is stored in `share/jobs/*.toml` for file-tree workspaces, `jobs/*.toml` at the shared repository root for RepositoryStore backends, or a user-level job directory. It contains repeatable snapshot task definitions:
 
 - Source references.
 - Schedule expressions.
@@ -118,7 +118,7 @@ Temporal configuration values use ISO-8601 duration and period strings. Short un
 
 Filter configuration uses ordered rules with include and exclude actions. Rules from applied layers are appended in source binding order, and the last matching rule determines the effective action.
 
-Changing `config.toml` preserves existing object identity and repository format. Changes that affect immutable repository structure require an explicit repository migration.
+Changing shared `config.toml` preserves existing object identity and repository format. Changes that affect immutable repository structure require an explicit repository migration.
 
 Concrete repository binary formats are defined in `docs/repository-format.md`. Snapshot and tree semantics are defined in `docs/snapshot-model.md`. Storage backend rules are defined in `docs/storage-backends.md`. The layered configuration schema is defined in `docs/configuration.md`. Repository transaction and crash recovery rules are defined in `docs/transactions.md`. Remote synchronization rules are defined in `docs/synchronization.md`. Recovery record rules are defined in `docs/recovery.md`.
 
@@ -526,7 +526,7 @@ The tool should also support an external recovery output directory:
 kaca recovery create --repo <repository> --redundancy 10 --output <recovery-directory>
 ```
 
-External recovery records are useful when the repository itself is stored on a disk or network location that may fail as a whole. The recovery set manifest should include the repository ID and protected file paths relative to the repository root so that external records can be matched back to the correct repository.
+External recovery records are useful when the shared repository root is stored on a disk or network location that may fail as a whole. The recovery set manifest should include the repository ID and protected file paths relative to the shared repository root so that external records can be matched back to the correct repository.
 
 For encrypted repositories, recovery records protect encrypted physical files. The PAR2 payload repairs damaged bytes without requiring the encryption key. Recovery set manifests and file names may expose repository layout and object sizes, so the format reserves an encrypted recovery manifest mode.
 
@@ -579,7 +579,7 @@ Remote synchronization should support resumable transfer:
 - Verify size and hash after transfer.
 - Avoid relying on synchronized indexes as the source of truth.
 
-The synchronized layout can mirror the file-tree repository layout, map repository paths to provider-specific objects, or use a single-file repository backend. The logical sync protocol is based on repository IDs, object IDs, pack IDs, snapshot record IDs, and recovery set IDs.
+Synchronization operates on the shared repository root. Backends can expose the shared layout as files, map shared repository paths to provider-specific objects, or store the shared layout inside a single-file repository backend. The logical sync protocol is based on repository IDs, object IDs, pack IDs, snapshot record IDs, and recovery set IDs.
 
 The remote synchronization specification is defined in `docs/synchronization.md`.
 
@@ -898,59 +898,81 @@ The repository must support integrity checks:
 
 ## 4. Repository Format Draft
 
-A local repository can use this layout:
+A file-tree local repository uses a workspace layout:
 
 ```text
 repository/
-  repository
-  config.toml
-  lock
+  share/
+    repository
+    config.toml
+    sources/
+      <source-name>.toml
+    jobs/
+      <job-name>.toml
+    profiles/
+      <profile-name>.toml
+    remotes/
+      <remote-name>.toml
+    objects/
+      ab/
+        abcdef...
+      packs/
+        <pack-id>.pack
+        <pack-id>.idx
+    snapshots/
+      2026-05-27T01-30-00Z-<id>.json
+    indexes/
+      object-refcount
+      snapshot-search
+    recovery/
+      sets/
   local/
     config.toml
     remotes/
       <remote-name>.toml
-  sources/
-    <source-name>.toml
-  jobs/
-    <job-name>.toml
-  profiles/
-    <profile-name>.toml
+    indexes/
+      file-state/
+        <source-id>
+  tmp/
+  lock
+```
+
+The RepositoryStore logical root is the shared repository root. In a file-tree workspace it is `share/`. In single-file archive and bundle repositories it is the archive or bundle internal root and does not contain a `share/` directory.
+
+A single-file repository stores only the shared repository layout inside the container. Client-local state is stored beside the container in a sidecar workspace:
+
+```text
+world.kaca.zip
+world.kaca.local/
+  config.toml
   remotes/
     <remote-name>.toml
-  objects/
-    ab/
-      abcdef...
-    packs/
-      <pack-id>.pack
-      <pack-id>.idx
-  snapshots/
-    2026-05-27T01-30-00Z-<id>.json
   indexes/
-    file-cache.json
-    object-refcount.json
-  recovery/
-    sets/
+    file-state/
+      <source-id>
   tmp/
+  lock
 ```
 
 Notes:
 
-- `repository` stores binary internal metadata such as repository ID, repository format version, object format version, hash algorithm, metadata encoding, canonical compression profile, object layout, encryption mode, key derivation public parameters, and creation time.
-- `config.toml` stores repository policy such as retention defaults, recovery record defaults, filesystem metadata capture defaults, and extension policy.
+- `share/repository` stores binary internal metadata such as repository ID, repository format version, object format version, hash algorithm, metadata encoding, canonical compression profile, object layout, encryption mode, key derivation public parameters, and creation time.
+- `share/config.toml` stores repository policy such as retention defaults, recovery record defaults, filesystem metadata capture defaults, and extension policy.
+- `share/sources` stores stable source definitions referenced by jobs.
+- `share/profiles` stores reusable policy bundles applied by sources, jobs, and source references before local overrides.
+- `share/jobs` stores repeatable snapshot job definitions such as source references, schedules, ordered filter rules, and per-job capture overrides.
+- `share/remotes` stores portable remote definitions referenced by synchronization commands.
+- `share/objects` stores the object database, including loose object envelopes keyed by object ID and immutable pack files plus pack indexes under `objects/packs`.
+- `share/snapshots` stores mutable snapshot records that point to immutable snapshot metadata payloads.
+- `share/indexes` stores repository-wide rebuildable indexes; snapshot records and objects remain the source of truth.
+- `share/recovery` stores optional recovery record sets.
 - `local/config.toml` stores client-local configuration such as restore defaults, service settings, UI preferences, and default remote selection.
 - `local/remotes` stores client-local remote overrides such as credential references, connection timeouts, and client-local transfer limits.
-- `sources` stores stable source definitions referenced by jobs.
-- `profiles` stores reusable policy bundles applied by sources, jobs, and source references before local overrides.
-- `jobs` stores repeatable snapshot job definitions such as source references, schedules, ordered filter rules, and per-job capture overrides.
-- `remotes` stores portable remote definitions referenced by synchronization commands.
-- `lock` prevents multiple processes from writing to the repository at the same time.
-- `objects` stores the object database, including loose object envelopes keyed by object ID and immutable pack files plus pack indexes under `objects/packs`.
-- `snapshots` stores mutable snapshot records that point to immutable snapshot metadata payloads.
-- `indexes` stores rebuildable indexes; snapshot records and objects remain the source of truth.
-- `recovery` stores optional recovery record sets.
-- `tmp` stores incomplete temporary writes.
+- `local/indexes` stores client-local rebuildable caches such as source file-state scan caches.
+- `lock` prevents multiple local processes from writing to the repository workspace at the same time.
+- `tmp` stores incomplete local temporary writes.
 
-Indexes can remain rebuildable from snapshot records and objects when needed.
+RepositoryStore paths are written relative to the shared repository root. Workspace paths such as `local/`, `tmp/`, and `lock` are not synchronized repository state.
 
 The concrete binary formats for `repository`, object envelopes, structured payloads, pack files, and pack indexes are defined in `docs/repository-format.md`.
 

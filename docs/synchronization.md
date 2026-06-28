@@ -4,7 +4,7 @@ This document defines remote repository synchronization rules.
 
 ## 1. Scope
 
-Synchronization transfers repository state between RepositoryStore endpoints.
+Synchronization transfers shared repository state between RepositoryStore endpoints. A file-tree local workspace exposes `share/` as the synchronized root. Archive and bundle repositories expose their internal root as the synchronized root.
 
 Authoritative synchronized state includes:
 
@@ -33,7 +33,7 @@ Repository format compatibility is checked before mutation:
 
 ## 3. Remote Layout
 
-RepositoryStore backends that expose files use the repository layout:
+RepositoryStore backends that expose files use the shared repository layout:
 
 ```text
 repository
@@ -50,18 +50,20 @@ objects/
     <pack-id>.idx
 snapshots/
 recovery/
-tmp/
+indexes/
 ```
+
+A file-tree workspace stores this layout under `share/`. Single-file archive and bundle repositories store this layout at the container internal root.
 
 Provider-specific backends may map this layout to native objects, keys, archive entries, bundle segments, or API resources. The logical synchronization protocol still uses repository IDs, object IDs, pack IDs, snapshot record IDs, and recovery set IDs.
 
-Temporary endpoint writes use:
+Temporary endpoint writes use backend-local staging. File-exposing shared roots may use:
 
 ```text
 tmp/uploads/<client-id>/<transfer-id>/
 ```
 
-Transfer IDs are opaque ASCII strings containing creation time and random entropy.
+Transfer IDs are opaque ASCII strings containing creation time and random entropy. Temporary upload paths are non-authoritative and are not synchronized as repository state.
 
 ## 4. Inventory
 

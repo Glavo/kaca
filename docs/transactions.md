@@ -18,9 +18,9 @@ Indexes are rebuildable and do not define object reachability.
 
 ## 2. Locking
 
-Mutating commands acquire the repository writer lock before publishing repository state. Multiple readers may run while no writer is publishing a partially visible state.
+Mutating commands acquire the repository writer lock before publishing shared repository state. Multiple readers may run while no writer is publishing a partially visible state.
 
-The writer lock is stored at:
+In a file-tree workspace, the writer lock is stored at:
 
 ```text
 lock
@@ -36,13 +36,13 @@ The lock payload records:
 - Command name.
 - Random lock token.
 
-Lock acquisition uses atomic file creation. Lock release deletes the lock only when the stored lock token matches the owning process token.
+Lock acquisition uses atomic file creation. Lock release deletes the lock only when the stored lock token matches the owning process token. The lock is client-local workspace state and is not stored inside the shared repository root.
 
 Stale lock recovery is an explicit repair operation. Normal commands report the stale lock candidate and stop.
 
 ## 3. Transaction Workspace
 
-Each mutating command writes temporary files under:
+In a file-tree workspace, each mutating command writes temporary files under:
 
 ```text
 tmp/transactions/<transaction-id>/
@@ -71,11 +71,11 @@ The transaction manifest records:
 - Planned publish targets.
 - Planned deletion targets.
 
-The transaction manifest is internal program metadata and is encoded with deterministic CBOR.
+The transaction manifest is internal program metadata and is encoded with deterministic CBOR. Transaction workspaces are client-local state and are not stored inside the shared repository root.
 
 ## 4. Atomic Publish Rules
 
-Temporary files are written on the same filesystem as their final repository target. Publication uses atomic rename within that filesystem.
+Temporary files are written on the same filesystem as their final shared repository target. Publication uses atomic rename within that filesystem. Repository target paths are relative to the shared repository root; in a file-tree workspace they are published under `share/`.
 
 Before publish, the writer flushes:
 
@@ -97,14 +97,14 @@ Publish sequence:
 2. Flush the temporary file.
 3. Verify the object ID, logical size, object header, payload authentication, and physical checksum.
 4. Create the fanout directory when needed.
-5. Atomically rename the temporary file to `objects/<fanout>/<object-id>`.
+5. Atomically rename the temporary file to `objects/<fanout>/<object-id>` relative to the shared repository root.
 6. Flush the fanout directory.
 
 An object is reachable only through snapshot records, pack indexes, or other authoritative references. A loose object published before a snapshot record is an orphan until a reachable snapshot references it.
 
 ## 6. Snapshot Record Publish
 
-Snapshot records are mutable reachability roots. Snapshot record creation writes a full replacement file to a transaction temporary file and atomically renames it into `snapshots/`.
+Snapshot records are mutable reachability roots. Snapshot record creation writes a full replacement file to a transaction temporary file and atomically renames it into `snapshots/` relative to the shared repository root.
 
 Snapshot creation publish order:
 
@@ -133,8 +133,8 @@ Publish sequence:
 2. Flush and verify the pack file.
 3. Write the temporary pack index.
 4. Flush and verify the pack index.
-5. Atomically rename the pack file into `objects/packs/`.
-6. Atomically rename the pack index into `objects/packs/`.
+5. Atomically rename the pack file into `objects/packs/` relative to the shared repository root.
+6. Atomically rename the pack index into `objects/packs/` relative to the shared repository root.
 7. Flush the `objects/packs/` directory.
 
 Loose objects remain authoritative until pruning removes them after the new pack is visible and verified.

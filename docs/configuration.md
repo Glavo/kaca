@@ -29,17 +29,19 @@ Configuration file locations:
 |---|---|
 | System configuration | platform configuration directory, `kaca/config.toml` |
 | User configuration | user configuration directory, `kaca/config.toml` |
-| Repository configuration | `<repository>/config.toml` |
-| Repository-local client configuration | `<repository>/local/config.toml` |
-| Remote configuration | `<repository>/remotes/<remote-name>.toml` |
-| Repository-local remote override | `<repository>/local/remotes/<remote-name>.toml` |
-| Source configuration | `<repository>/sources/<source-name>.toml` or user configuration source directory |
-| Profile configuration | `<repository>/profiles/<profile-name>.toml` or user configuration profile directory |
-| Job configuration | `<repository>/jobs/<job-name>.toml` or user configuration job directory |
+| Repository configuration | `<shared-repository>/config.toml` |
+| Repository-local client configuration | `<workspace>/local/config.toml` |
+| Remote configuration | `<shared-repository>/remotes/<remote-name>.toml` |
+| Repository-local remote override | `<workspace>/local/remotes/<remote-name>.toml` |
+| Source configuration | `<shared-repository>/sources/<source-name>.toml` or user configuration source directory |
+| Profile configuration | `<shared-repository>/profiles/<profile-name>.toml` or user configuration profile directory |
+| Job configuration | `<shared-repository>/jobs/<job-name>.toml` or user configuration job directory |
 
 The parser accepts the keys defined for the file's layer. Extension data is stored under `[extensions.<name>]`.
 
-Repository synchronization includes repository configuration, remote configuration, and repository state. Repository-local client configuration and local remote overrides are resolved by the local client that owns the `local` directory.
+`<shared-repository>` is the RepositoryStore logical root. In a file-tree local workspace it is `<workspace>/share`. In archive and bundle repositories it is the archive or bundle internal root.
+
+Repository synchronization includes repository configuration, remote configuration, and repository state from the shared repository root. Repository-local client configuration and local remote overrides are resolved by the local client that owns the workspace `local` directory.
 
 Repository and source locations may be local paths or backend locators as defined in `docs/storage-backends.md`.
 
@@ -53,7 +55,7 @@ Include paths are resolved relative to the file that declares them. Includes are
 
 ## 2. Repository Configuration
 
-`<repository>/config.toml` stores repository policy and portable repository defaults.
+`<shared-repository>/config.toml` stores repository policy and portable repository defaults.
 
 ```toml
 config_version = 1
@@ -226,7 +228,7 @@ Profile names use the same syntax as source names: `[a-z][a-z0-9._-]{0,63}`.
 
 ## 4. Client Configuration
 
-System, user, and repository-local client configuration files use the same schema. Repository-local client configuration is stored at `<repository>/local/config.toml`.
+System, user, and repository-local client configuration files use the same schema. Repository-local client configuration is stored at `<workspace>/local/config.toml`.
 
 ```toml
 config_version = 1
@@ -337,7 +339,7 @@ Metadata profile values:
 
 ## 5. Remote Configuration
 
-Repository remote configuration files define portable RepositoryStore synchronization endpoints. Repository remote configuration is stored as `remotes/<remote-name>.toml`. The file name and `name` field use the mutable remote name. The immutable remote identity is `remote_id`.
+Repository remote configuration files define portable RepositoryStore synchronization endpoints. Repository remote configuration is stored as `<shared-repository>/remotes/<remote-name>.toml`. The file name and `name` field use the mutable remote name. The immutable remote identity is `remote_id`.
 
 ```toml
 remote_version = 1
@@ -391,7 +393,7 @@ Remote `trust` values:
 
 ### 5.3 Local Remote Overrides
 
-Repository-local remote override files store client-local settings for a remote. They are stored as `local/remotes/<remote-name>.toml` and are not synchronized.
+Repository-local remote override files store client-local settings for a remote. They are stored as `<workspace>/local/remotes/<remote-name>.toml` and are not synchronized.
 
 ```toml
 remote = "origin"
@@ -413,7 +415,7 @@ A local remote override selects the remote by `remote_id` when present and by `r
 
 ## 6. Source Configuration
 
-Source configuration files define stable tracked roots. Repository source configuration is stored as `sources/<source-name>.toml`. The file name and `name` field use the mutable source name. The immutable source identity is `source_id`.
+Source configuration files define stable tracked roots. Repository source configuration is stored as `<shared-repository>/sources/<source-name>.toml`. The file name and `name` field use the mutable source name. The immutable source identity is `source_id`.
 
 ```toml
 source_version = 1
@@ -460,7 +462,7 @@ Source names match:
 [a-z][a-z0-9._-]{0,63}
 ```
 
-Repository source file names match the source name: `sources/<source-name>.toml`. Source names are unique after layer resolution. Source IDs are unique after layer resolution and remain unchanged when the source name or source path changes.
+Repository source file names match the source name: `sources/<source-name>.toml` relative to the shared repository root. Source names are unique after layer resolution. Source IDs are unique after layer resolution and remain unchanged when the source name or source path changes.
 
 Source `kind` values:
 
@@ -794,7 +796,7 @@ system [restore]
 built-in default
 ```
 
-Remote definitions are resolved from repository `remotes/*.toml`. Local remote overrides are applied from `local/remotes/*.toml` for the current client. Commands may select a remote by name or remote ID.
+Remote definitions are resolved from `<shared-repository>/remotes/*.toml`. Local remote overrides are applied from `<workspace>/local/remotes/*.toml` for the current client. Commands may select a remote by name or remote ID.
 
 ## 16. Validation Rules
 

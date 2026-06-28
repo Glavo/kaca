@@ -13,6 +13,7 @@ Protected files may include:
 - Source configuration files.
 - Job configuration files.
 - Profile configuration files.
+- Remote configuration files.
 - Snapshot record files.
 - Loose object files.
 - Pack files.
@@ -25,7 +26,7 @@ Recovery records do not define object reachability. Snapshot records and structu
 
 ## 2. Layout
 
-Repository-local recovery sets are stored under:
+Shared repository recovery sets are stored under:
 
 ```text
 recovery/
@@ -72,7 +73,7 @@ Protected file record:
 
 | Field | Type | Description |
 |---|---|---|
-| `path` | string | Path relative to the repository root. |
+| `path` | string | Path relative to the shared repository root. |
 | `kind` | string | Repository file kind. |
 | `size` | integer | File size in bytes. |
 | `physicalDigest` | string | Digest of the protected physical file bytes. |
@@ -100,7 +101,7 @@ Future internal Reed-Solomon formats may use separate algorithm names. Recovery 
 
 ## 5. Protected File Selection
 
-Recovery creation selects a fixed file set before generating recovery data.
+Recovery creation selects a fixed file set before generating recovery data. File classes are resolved relative to the shared repository root unless the class name explicitly starts with `local`.
 
 Default protected file kinds:
 
@@ -123,7 +124,7 @@ Default protected file kinds:
 | `temporary-file` | no |
 | `lock-file` | no |
 
-The protected file set is immutable for a recovery set. A later repository state requires a new recovery set.
+The protected file set is immutable for a recovery set. A later repository state requires a new recovery set. Client-local workspace files, sidecar local files, temporary files, and lock files are not part of the default protected set.
 
 ## 6. Creation
 
@@ -178,4 +179,4 @@ Prune does not delete recovery sets automatically unless recovery retention poli
 
 Recovery records protect encrypted physical files when repository encryption is enabled. Recovery repair does not require decrypting object payloads.
 
-Repository-local recovery manifests expose protected relative paths, file sizes, and recovery set metadata. Encrypted recovery manifests are represented by a future manifest mode and use the same recovery volume layout.
+Shared repository recovery manifests expose protected relative paths, file sizes, and recovery set metadata. Encrypted recovery manifests are represented by a future manifest mode and use the same recovery volume layout.
