@@ -131,19 +131,15 @@ RepositoryStore backends include file-tree repositories, remote tree/object repo
 
 ### 3.1 Snapshots Are Complete Multi-Root Views
 
-Each snapshot should fully describe the source root set at a point in time. A source root represents one tracked directory or regular file with an immutable source ID, a captured source name, a display name, a captured source path, a source root kind, source-specific filters, and required metadata.
+Each snapshot should fully describe the source root set at a point in time. A source root represents one tracked directory or regular file with an immutable source ID, a captured source path, a source root kind, source-specific filters, and required metadata.
 
 Restoring an arbitrary snapshot uses the snapshot's own complete root set. Restore commands can restore every root, a selected root, or selected paths inside selected roots.
 
 Source IDs are canonical lowercase UUID text and are unique within a snapshot. Source names are mutable user-facing aliases that match `[a-z][a-z0-9._-]{0,63}`.
 
-Snapshot display paths are scoped by captured source name:
+Snapshot objects store source IDs. Display paths are derived by resolving source IDs through current source configuration. Diagnostics use the source ID as the path prefix when no source configuration maps the ID to a current source name.
 
-```text
-<source-name>/<relative-path>
-```
-
-The captured source name, display name, and source path are display and audit metadata. Internal snapshot identity uses source IDs and relative paths.
+The captured source path is display and audit metadata. Internal snapshot identity uses source IDs and relative paths.
 
 Overlapping source paths are valid and remain separate logical roots.
 
@@ -194,6 +190,9 @@ Physical layout:
 objects/
   ab/
     <full-object-id>
+  packs/
+    <pack-id>.pack
+    <pack-id>.idx
 ```
 
 The object file name is the complete object ID. The fanout directory repeats the first two hex characters for directory distribution.
@@ -204,7 +203,7 @@ Object paths use fixed one-level fanout:
 objects/<first-two-hex>/<full-object-id>
 ```
 
-The path builder is centralized. Fanout is fixed by the repository format.
+The path builder is centralized. Fanout is fixed by the repository format. `objects/packs/` is a reserved object store subdirectory and is not a loose object fanout directory.
 
 The object pool stores snapshot payloads, tree payloads, chunk bytes, and whole-file bytes under the same physical layout. All immutable payloads use the same identity, envelope, verification, synchronization, recovery, packing, and pruning rules.
 
@@ -244,7 +243,7 @@ Loose object files are repository-owned staging files for newly imported objects
 Pack layout:
 
 ```text
-packs/
+objects/packs/
   <pack-id>.pack
   <pack-id>.idx
 ```
@@ -801,7 +800,7 @@ restore_errors = "warn"
 
 Capture profile values:
 
-- `portable` captures source-scoped display path, entry type, target reference, logical size, modified time, executable bit, read-only bit, and symbolic link target.
+- `portable` captures source identity, source-relative path, entry type, target reference, logical size, modified time, executable bit, read-only bit, and symbolic link target.
 - `system` captures `portable` fields plus POSIX mode, uid, gid, user name, group name, and Windows file attributes.
 - `full` captures `system` fields plus ACLs, extended attributes, macOS flags, macOS resource fork metadata, Windows security descriptor, and Windows reparse point metadata.
 
@@ -819,7 +818,7 @@ Capture profile resolution uses command invocation overrides, job configuration,
 
 The snapshot model should support sparse restore: restoring only selected paths or path patterns from a snapshot.
 
-Simple sparse behavior can be implemented by loading the snapshot manifest and filtering entries. Path filters may include a source name selector. Commands resolve source names to source IDs before matching snapshot roots. Command-line include and exclude options are converted to ordered filter rules:
+Simple sparse behavior can be implemented by loading the snapshot manifest and filtering entries. Path filters may include a source name or source ID selector. Commands resolve source names to source IDs before matching snapshot roots. Command-line include and exclude options are converted to ordered filter rules:
 
 ```text
 kaca restore <snapshot-id> <target> --path docs/readme.md
@@ -910,9 +909,9 @@ repository/
   objects/
     ab/
       abcdef...
-  packs/
-    <pack-id>.pack
-    <pack-id>.idx
+    packs/
+      <pack-id>.pack
+      <pack-id>.idx
   snapshots/
     2026-05-27T01-30-00Z-<id>.json
   indexes/
@@ -932,8 +931,7 @@ Notes:
 - `profiles` stores reusable policy bundles applied by sources, jobs, and source references before local overrides.
 - `jobs` stores repeatable snapshot job definitions such as source references, schedules, ordered filter rules, and per-job capture overrides.
 - `lock` prevents multiple processes from writing to the repository at the same time.
-- `objects` stores untyped physical object envelopes keyed by object ID.
-- `packs` stores immutable packed object files and pack indexes.
+- `objects` stores the object database, including loose object envelopes keyed by object ID and immutable pack files plus pack indexes under `objects/packs`.
 - `snapshots` stores mutable snapshot records that point to immutable snapshot metadata payloads.
 - `indexes` stores rebuildable indexes; snapshot records and objects remain the source of truth.
 - `recovery` stores optional recovery record sets.
@@ -996,7 +994,7 @@ The example below is JSON for readability. The stored snapshot object should use
 Snapshot payload requirements:
 
 - The root list contains one or more source roots.
-- Each source root records source ID, captured source name, display name, source root kind, captured source path display information, filter summary, case sensitivity policy, and root content entries.
+- Each source root records source ID, source root kind, captured source path display information, filter summary, case sensitivity policy, and root content entries.
 - Directory, regular file, symbolic link, hard link, and special file entries use structured tree entry records.
 - Regular file entries support whole-file content references and ordered chunked content references.
 - Captured metadata follows the active metadata capture profile.
@@ -1304,7 +1302,7 @@ When a newer program opens an older repository, it must clearly decide:
 The internal path format is:
 
 - Use `/` as the path separator inside manifests.
-- Store source-scoped display paths for diagnostics and source-relative entry paths for structured metadata.
+- Store source-relative entry paths in structured metadata and derive display paths for diagnostics from source configuration when available.
 - Store tree entry names as single path segments.
 - Reject empty path segments, `.`, `..`, path separators inside entry names, NUL, and ASCII control characters.
 - Keep captured source root paths only for display and audit.

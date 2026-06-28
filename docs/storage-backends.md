@@ -11,7 +11,7 @@ SourceStore
   reads files, directories, and filesystem metadata
 
 RepositoryStore
-  stores repository state, objects, packs, snapshot records, recovery records, and configuration
+  stores repository state, the object database, snapshot records, recovery records, and configuration
 
 ExecutionSite
   runs scanning, hashing, chunking, repository writes, restore, verify, prune, and sync orchestration

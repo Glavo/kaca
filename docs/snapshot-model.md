@@ -12,8 +12,6 @@ Restore-critical data is stored in snapshot objects:
 
 - Source roots.
 - Source IDs.
-- Captured source names.
-- Root display names.
 - Source root kinds.
 - Tree entries.
 - Target references.
@@ -40,9 +38,8 @@ Source root rules:
 
 - Source IDs are unique within the snapshot.
 - Source IDs follow the UUID rules in `docs/repository-format.md`.
-- Captured source names follow the source name rules in `docs/repository-format.md`.
 - Source root kinds are `directory` or `regular file`.
-- Captured source names, display names, and source paths are display and audit metadata.
+- Captured source paths are display and audit metadata.
 - Source name changes and source path changes do not change the meaning of an existing snapshot root.
 
 Directory roots contain a root directory tree. File roots contain one regular file entry using the captured file name as the entry name.
@@ -141,7 +138,6 @@ Snapshot validation checks:
 - Snapshot object payload magic and version.
 - Unique source IDs.
 - Valid source ID UUID syntax.
-- Valid captured source name syntax.
 - Valid source root kind.
 - Valid tree entry names.
 - Valid entry target reference for each entry type.

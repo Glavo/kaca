@@ -40,7 +40,11 @@ config.toml
 sources/
 jobs/
 objects/
-packs/
+  ab/
+    <object-id>
+  packs/
+    <pack-id>.pack
+    <pack-id>.idx
 snapshots/
 recovery/
 tmp/

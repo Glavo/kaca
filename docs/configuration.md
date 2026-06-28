@@ -204,7 +204,7 @@ Chunking rules are evaluated in order. The first matching rule supplies the chun
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `id` | string | required | Stable rule ID used for keyed merge and diagnostics. |
-| `glob` | glob pattern | required | Source-scoped display path pattern. |
+| `glob` | glob pattern | required | Source-qualified path pattern. |
 | `strategy` | string | required | Chunking strategy. |
 | `block_size` | size | required for `fixed-size` | Fixed chunk size. |
 | `min_size` | size | required for `cdc` | Minimum CDC chunk size. |
@@ -437,7 +437,7 @@ Source `kind` values:
 | `"directory"` | Scan a directory tree. |
 | `"file"` | Scan one regular file as a source root. |
 
-Snapshots use `source_id` as the logical identity of the tracked root. The `name`, `display_name`, and `path` values are captured for display, audit, and source resolution metadata.
+Snapshots use `source_id` as the logical identity of the tracked root. The `path` value is captured for display and audit metadata. The `name` and `display_name` values are resolved from current source configuration when displaying snapshots.
 
 Overlapping source paths are valid. Each source remains a separate logical root identified by its source ID.
 
@@ -519,7 +519,7 @@ Each source reference selects one source definition for snapshots created by the
 
 Each source reference contains exactly one of `source` or `source_id`. The `source` field resolves through the current source name table. The `source_id` field resolves directly to the matching source definition. A source reference may contain a nested `[source_refs.filters]` table and `[[source_refs.filters.rules]]` entries.
 
-Each resolved source reference expands to one snapshot root. The snapshot root identity is the resolved source ID. Display paths use the captured source name and relative path.
+Each resolved source reference expands to one snapshot root. The snapshot root identity is the resolved source ID. Display paths are derived from current source configuration when available.
 
 A job references a source at most once after source resolution. Overlapping source paths are valid and remain separate logical roots.
 
@@ -648,7 +648,7 @@ Short unit forms such as `30s`, `10m`, `24h`, and `30d` are not valid configurat
 
 Calendar expressions are parsed only by scheduling components.
 
-UUID string values use canonical lowercase text with hyphen separators. Locator values follow `docs/storage-backends.md`. Glob pattern fields define their own match root. Filter rule patterns are source-relative; chunking rule patterns are source-scoped display paths such as `<source-name>/<relative-path>`.
+UUID string values use canonical lowercase text with hyphen separators. Locator values follow `docs/storage-backends.md`. Glob pattern fields define their own match root. Filter rule patterns are source-relative; chunking rule patterns are source-qualified paths such as `<source-name>/<relative-path>` or `<source-id>/<relative-path>`.
 
 ## 10. Merge Rules
 

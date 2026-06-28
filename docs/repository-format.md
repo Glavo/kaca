@@ -33,23 +33,13 @@ Source IDs are canonical lowercase UUID text strings that match:
 
 Source IDs are immutable logical source identities. They are compared by exact canonical text value after UTF-8 decoding.
 
-Source names are user-facing aliases that match:
-
-```text
-[a-z][a-z0-9._-]{0,63}
-```
-
-Source names are case-sensitive and are compared by exact Unicode scalar value after UTF-8 decoding. The values `.`, `..`, and strings containing `/`, `\`, `:`, ASCII control characters, or NUL are invalid.
+Source names are user-facing aliases defined by configuration. Snapshot objects store source IDs, not source names.
 
 Tree entry names are UTF-8 text strings normalized to NFC. Entry names are single path segments and cannot contain `/`, `\`, NUL, or ASCII control characters. The values `.`, `..`, and the empty string are invalid entry names.
 
-Snapshot roots are internally identified by source ID. Snapshot display paths are formed by joining the captured source name and tree entry names with `/`:
+Snapshot roots are internally identified by source ID. Display paths are formed by resolving the source ID through source configuration and joining the resolved source name with tree entry names. Diagnostics render the source ID as the path prefix when no source configuration maps the ID to a current source name.
 
-```text
-<source-name>/<entry-name>/<entry-name>
-```
-
-When a snapshot root has no captured source name, diagnostics may render the source ID as the display path prefix. Stored tree entries contain only one path segment at a time. Full paths are reconstructed by walking tree references.
+Stored tree entries contain only one path segment at a time. Full paths are reconstructed by walking tree references.
 
 ## 2. Algorithm Identifiers
 
@@ -489,16 +479,14 @@ Snapshot root map:
 | Key | Type | Field |
 |---:|---|---|
 | 1 | tstr | source ID |
-| 2 | tstr | captured source name |
-| 3 | tstr / null | display name |
-| 4 | map | source display information |
-| 5 | map / null | root tree reference |
-| 6 | array | direct entries |
-| 7 | map / null | source filter summary |
-| 8 | uint | case sensitivity policy |
-| 9 | uint | source root kind |
+| 2 | map | source display information |
+| 3 | map / null | root tree reference |
+| 4 | array | direct entries |
+| 5 | map / null | source filter summary |
+| 6 | uint | case sensitivity policy |
+| 7 | uint | source root kind |
 
-Source IDs are unique within a snapshot. Snapshot display paths are scoped as `<captured-source-name>/<relative-path>`. Internal restore, diff, and reachability logic uses source ID plus relative path.
+Source IDs are unique within a snapshot. Internal restore, diff, sparse selection, and reachability logic uses source ID plus relative path. Display paths are derived from source configuration when available.
 
 Source root kinds:
 

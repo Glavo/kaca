@@ -123,8 +123,8 @@ Pack publication writes pack and index files in one transaction.
 Pack files are discoverable only when both files exist and the index validates the pack checksum:
 
 ```text
-packs/<pack-id>.pack
-packs/<pack-id>.idx
+objects/packs/<pack-id>.pack
+objects/packs/<pack-id>.idx
 ```
 
 Publish sequence:
@@ -133,9 +133,9 @@ Publish sequence:
 2. Flush and verify the pack file.
 3. Write the temporary pack index.
 4. Flush and verify the pack index.
-5. Atomically rename the pack file into `packs/`.
-6. Atomically rename the pack index into `packs/`.
-7. Flush the `packs/` directory.
+5. Atomically rename the pack file into `objects/packs/`.
+6. Atomically rename the pack index into `objects/packs/`.
+7. Flush the `objects/packs/` directory.
 
 Loose objects remain authoritative until pruning removes them after the new pack is visible and verified.
 
