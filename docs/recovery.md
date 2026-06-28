@@ -10,6 +10,7 @@ Protected files may include:
 
 - `repository`.
 - `config.toml`.
+- Source configuration files.
 - Job configuration files.
 - Profile configuration files.
 - Snapshot record files.
@@ -107,6 +108,7 @@ Default protected file kinds:
 |---|---|
 | `repository` | yes |
 | `repository-config` | yes |
+| `source-config` | yes |
 | `job-config` | yes |
 | `profile-config` | yes |
 | `snapshot-record` | yes |

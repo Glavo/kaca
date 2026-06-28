@@ -2,7 +2,7 @@
 
 This document defines the user-editable configuration files used by `kaca`.
 
-Repository identity, object identity, digest profiles, object layout, canonical compression profile, encryption mode, and repository format versions are stored in `repository`. Configuration files store policy, defaults, local client settings, repository endpoints, and job definitions.
+Repository identity, object identity, digest profiles, object layout, canonical compression profile, encryption mode, and repository format versions are stored in `repository`. Configuration files store policy, defaults, local client settings, repository endpoints, source definitions, and job definitions.
 
 ## 1. Configuration Layers
 
@@ -10,7 +10,9 @@ Configuration is resolved from ordered layers:
 
 ```text
 command invocation overrides
+job source reference configuration
 job configuration
+source configuration
 profile configuration
 repository-local client configuration
 repository configuration
@@ -29,6 +31,7 @@ Configuration file locations:
 | User configuration | user configuration directory, `kaca/config.toml` |
 | Repository configuration | `<repository>/config.toml` |
 | Repository-local client configuration | `<repository>/local/config.toml` |
+| Source configuration | `<repository>/sources/<source-id>.toml` or user configuration source directory |
 | Profile configuration | `<repository>/profiles/<profile-name>.toml` or user configuration profile directory |
 | Job configuration | `<repository>/jobs/<job-name>.toml` or user configuration job directory |
 
@@ -146,7 +149,7 @@ Retention rule types:
 
 ## 3. Profile Configuration
 
-Profile configuration files define reusable policy bundles. Jobs may apply one or more profiles before job-local overrides.
+Profile configuration files define reusable policy bundles. Sources, jobs, and source references may apply one or more profiles before local overrides.
 
 ```toml
 profile_version = 1
@@ -370,31 +373,85 @@ credentials = "file:secrets/origin.credentials"
 
 Plain secret values are stored outside configuration files.
 
-## 5. Job Configuration
+## 5. Source Configuration
 
-Job configuration files define repeatable snapshot tasks.
+Source configuration files define stable tracked roots. They do not schedule snapshots by themselves. Jobs include sources through `[[source_refs]]` entries.
+
+```toml
+source_version = 1
+id = "world-a"
+kind = "directory"
+path = "D:/Minecraft/.minecraft/versions/1.21.1/saves/world-a"
+display_name = "World A"
+profiles = ["minecraft-world"]
+
+[metadata]
+capture = "portable"
+
+[filters]
+include = ["**"]
+exclude = []
+```
+
+### 5.1 Top-Level Keys
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `source_version` | integer | required | Source configuration format version. |
+| `id` | string | required | Stable root ID used in snapshot-relative paths. |
+| `kind` | string | `"directory"` | Source root kind. |
+| `path` | locator | required | Source locator scanned for this root. |
+| `display_name` | string | `id` | User-facing source name. |
+| `profiles` | array of strings | absent | Profiles applied before source-local settings. |
+
+Source IDs match:
+
+```text
+[a-z][a-z0-9._-]{0,63}
+```
+
+Source `kind` values:
+
+| Value | Meaning |
+|---|---|
+| `"directory"` | Scan a directory tree. |
+| `"file"` | Scan one regular file as a source root. |
+
+The source ID is the logical identity of the tracked root. The `path` value is the current scan location and may change without changing source identity. Snapshots record the captured source path as display and audit metadata.
+
+Overlapping source paths are valid. Each source remains a separate logical root identified by its source ID.
+
+### 5.2 `[metadata]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `capture` | string | resolved | Filesystem metadata capture profile for snapshots of this source. |
+
+### 5.3 `[filters]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `include` | array of strings | absent | Default include patterns for this source. |
+| `exclude` | array of strings | absent | Default exclude patterns for this source. |
+
+## 6. Job Configuration
+
+Job configuration files define repeatable snapshot tasks. A job references source definitions and supplies scheduling plus job-local policy.
 
 ```toml
 job_version = 1
-name = "home"
+name = "minecraft-1-21-1"
 profiles = ["minecraft"]
 repository = "sftp://backup.example.com/kaca/repository"
 
-[[sources]]
-id = "home"
-kind = "directory"
-path = "D:/Users/example"
-display_name = "Home"
+[[source_refs]]
+source = "instance"
 include = ["**"]
-exclude = ["**/build/**", "**/.gradle/**"]
+exclude = ["saves", "saves/**"]
 
-[[sources]]
-id = "work"
-kind = "directory"
-path = "D:/Work"
-display_name = "Work"
-include = ["**"]
-exclude = ["**/out/**"]
+[[source_refs]]
+source = "world-a"
+profiles = ["minecraft-world"]
 
 [metadata]
 capture = "portable"
@@ -408,7 +465,7 @@ include = ["**"]
 exclude = []
 ```
 
-### 5.1 Top-Level Keys
+### 6.1 Top-Level Keys
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -417,43 +474,34 @@ exclude = []
 | `repository` | string | absent | Repository locator for user-level job files. |
 | `profiles` | array of strings | absent | Profiles applied before job-local settings. |
 
-### 5.2 `[[sources]]`
+### 6.2 `[[source_refs]]`
 
-Each source entry defines one tracked root for snapshots created by the job.
+Each source reference selects one source definition for snapshots created by the job.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `id` | string | required | Stable root ID used in snapshot-relative paths. |
-| `kind` | string | `"directory"` | Source root kind. |
-| `path` | string | required | Source locator scanned for this root. |
-| `display_name` | string | `id` | User-facing root name. |
-| `include` | array of strings | job `[filters].include` | Include patterns for this source. |
-| `exclude` | array of strings | job `[filters].exclude` | Exclude patterns for this source. |
+| `source` | string | required | Referenced source ID. |
+| `profiles` | array of strings | absent | Profiles applied for this source binding. |
+| `include` | array of strings | resolved | Include patterns for this source binding. |
+| `exclude` | array of strings | resolved | Exclude patterns for this source binding. |
 
-Source IDs are unique within a job. Snapshot-relative paths use `<source-id>/<relative-path>`.
+Each source reference expands to one snapshot root. The snapshot root ID is the referenced source ID, and snapshot-relative paths use `<source-id>/<relative-path>`.
 
-Source ID values match:
+A job references a source at most once. Overlapping source paths are valid and remain separate logical roots.
 
-```text
-[a-z][a-z0-9._-]{0,63}
-```
+### 6.3 `[source_refs.metadata]`
 
-Source `kind` values:
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `capture` | string | resolved | Filesystem metadata capture profile for this source binding. |
 
-| Value | Meaning |
-|---|---|
-| `"directory"` | Scan a directory tree. |
-| `"file"` | Scan one regular file as a source root. |
-
-Overlapping source paths are valid. Job diagnostics report overlapping sources with their source IDs and paths.
-
-### 5.3 `[metadata]`
+### 6.4 `[metadata]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `capture` | string | resolved | Filesystem metadata capture profile for snapshots created by the job. |
 
-### 5.4 `[schedule]`
+### 6.5 `[schedule]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -462,14 +510,14 @@ Overlapping source paths are valid. Job diagnostics report overlapping sources w
 
 The calendar expression format is a separate scheduler interface decision.
 
-### 5.5 `[filters]`
+### 6.6 `[filters]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `include` | array of strings | absent | Default include patterns for source scanning. |
-| `exclude` | array of strings | absent | Default exclude patterns for source scanning. |
+| `include` | array of strings | absent | Default include patterns for source bindings. |
+| `exclude` | array of strings | absent | Default exclude patterns for source bindings. |
 
-## 6. Extensions
+## 7. Extensions
 
 Extensions use namespaced tables:
 
@@ -481,7 +529,7 @@ value = "custom"
 
 Extension names are lowercase ASCII identifiers containing letters, digits, `_`, and `-`.
 
-## 7. Value Types
+## 8. Value Types
 
 Configuration values are parsed according to the schema field type.
 
@@ -511,7 +559,7 @@ Calendar expressions are parsed only by scheduling components.
 
 Locator values follow `docs/storage-backends.md`. Glob patterns match root-scoped snapshot-relative paths.
 
-## 8. Merge Rules
+## 9. Merge Rules
 
 Effective configuration is built with schema-aware merge rules.
 
@@ -530,20 +578,24 @@ Keyed array merge rules:
 | Field | Key | Rule |
 |---|---|---|
 | `[[remotes]]` | `name` | Higher-layer entry replaces the lower-layer entry with the same name. |
-| `[[sources]]` | `id` | Job-local entries define the job source set. |
+| `[[source_refs]]` | `source` | Job-local entries define the job source reference set. |
 | `[[chunking.rules]]` | `id` | Higher-layer rule replaces the lower-layer rule with the same ID. |
 | `[[policy.retention.rules]]` | `id` | Higher-layer rule replaces the lower-layer rule with the same ID. |
 
-Profile application order:
+Source binding application order:
 
-1. Resolve profile `extends` recursively.
-2. Apply profiles in listed order.
-3. Apply job-local settings.
-4. Apply command invocation overrides.
+1. Resolve profile `extends` recursively for every referenced profile.
+2. Apply source definition profiles in listed order.
+3. Apply source definition settings.
+4. Apply job profiles in listed order.
+5. Apply job settings.
+6. Apply source reference profiles in listed order.
+7. Apply source reference settings.
+8. Apply command invocation overrides.
 
 Profile cycles are invalid. Duplicate profile names at the same layer are invalid.
 
-## 9. Secret Policy
+## 10. Secret Policy
 
 Configuration files store credential references only.
 
@@ -557,7 +609,7 @@ credentials = "file:secrets/origin.credentials"
 
 Plaintext password, token, access key, secret key, and private key values are invalid in configuration files. The validator reports keys whose names or values match secret-like patterns unless the field type is credential reference.
 
-## 10. Synchronization and Protection Policy
+## 11. Synchronization and Protection Policy
 
 Repository state protection by file class:
 
@@ -565,14 +617,15 @@ Repository state protection by file class:
 |---|---|---|---|
 | `repository` | yes | yes | Internal binary repository metadata. |
 | `config.toml` | yes | yes | Portable repository policy. |
+| `sources/*.toml` | yes | yes | Stable source definitions. |
 | `jobs/*.toml` | yes | yes | Repeatable job definitions. |
 | `profiles/*.toml` | yes | yes | Reusable policy bundles. |
 | `local/config.toml` | no | optional | Machine-local settings and credential references. |
 | system/user config | no | no | Protected only when explicitly configured as a source. |
 
-Synchronization treats repository configuration, job configuration, and profile configuration as repository state. Repository-local client configuration is evaluated by the client that owns the `local` directory.
+Synchronization treats repository configuration, source configuration, job configuration, and profile configuration as repository state. Repository-local client configuration is evaluated by the client that owns the `local` directory.
 
-## 11. Compatibility and Migration
+## 12. Compatibility and Migration
 
 Configuration files carry explicit format versions.
 
@@ -587,7 +640,7 @@ Compatibility rules:
 
 `kaca config validate` validates every configuration layer. `kaca config migrate` rewrites compatible old configuration files to the current schema.
 
-## 12. Value Resolution
+## 13. Value Resolution
 
 Effective values are resolved with origin tracking. Diagnostics and `config get` output include the layer and file path that supplied each value.
 
@@ -595,7 +648,9 @@ Example resolution for snapshot metadata capture:
 
 ```text
 command invocation override
+job source reference [metadata].capture
 job [metadata].capture
+source [metadata].capture
 profile [metadata].capture
 repository-local client [metadata].capture
 repository [policy.metadata].default_capture
@@ -616,11 +671,11 @@ built-in default
 
 Repository endpoint definitions are keyed by remote name. A higher-layer endpoint with the same name replaces the lower-layer endpoint.
 
-## 13. Validation Rules
+## 14. Validation Rules
 
 The parser validates:
 
-- Configuration, profile, and job format versions.
+- Configuration, source, profile, and job format versions.
 - Allowed sections for each configuration layer.
 - Field types.
 - Enum values.
@@ -628,11 +683,14 @@ The parser validates:
 - Recovery redundancy range.
 - Unique remote names after layer resolution.
 - Extension table names.
+- Required source fields.
 - Required job fields.
-- At least one source entry for each job.
-- Unique source IDs within each job.
+- At least one source reference for each job.
+- Unique source IDs across resolved source definitions.
+- Unique source references within each job.
 - Valid source ID syntax.
 - Valid source root kind values.
+- Valid source references.
 - Valid include paths and include cycle absence.
 - Valid profile references and profile cycle absence.
 - Valid typed values for size, duration, period, temporal amount, locator, glob pattern, credential reference, and calendar expression.

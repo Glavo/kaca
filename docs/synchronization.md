@@ -10,6 +10,7 @@ Authoritative synchronized state includes:
 
 - `repository`.
 - Repository `config.toml`.
+- Repository source configuration files.
 - Repository job configuration files.
 - Repository profile configuration files.
 - Immutable loose objects.
@@ -36,6 +37,7 @@ RepositoryStore backends that expose files use the repository layout:
 ```text
 repository
 config.toml
+sources/
 jobs/
 objects/
 packs/
@@ -64,6 +66,7 @@ The synchronization inventory is the set of repository items visible to the clie
 - Snapshot record IDs, revisions, and deletion markers.
 - Recovery set IDs.
 - Repository configuration revision.
+- Source configuration revisions.
 - Job configuration revisions.
 - Profile configuration revisions.
 

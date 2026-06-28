@@ -67,7 +67,9 @@ Configuration files use a layered model:
 
 ```text
 command invocation overrides
+job source reference configuration
 job configuration
+source configuration
 profile configuration
 repository-local client configuration
 repository configuration
@@ -83,6 +85,8 @@ Repository configuration is stored in `config.toml`. It contains portable reposi
 - Filesystem metadata capture default.
 - Extension policy.
 
+Source configuration is stored in `sources/*.toml` or a user-level source directory. It contains stable tracked root definitions such as source ID, source kind, current path, display name, default profiles, filters, and metadata policy.
+
 Profile configuration is stored in `profiles/*.toml` or a user-level profile directory. It contains reusable policy bundles such as metadata defaults, filters, and chunking rules.
 
 Repository-local client configuration is stored in `local/config.toml`. It contains machine-specific and client-specific defaults:
@@ -95,7 +99,7 @@ Repository-local client configuration is stored in `local/config.toml`. It conta
 
 Job configuration is stored in `jobs/*.toml` or a user-level job directory. It contains repeatable snapshot task definitions:
 
-- Source roots.
+- Source references.
 - Schedule expressions.
 - Include and exclude patterns.
 - Applied profiles.
@@ -893,6 +897,8 @@ repository/
   lock
   local/
     config.toml
+  sources/
+    <source-id>.toml
   jobs/
     <job-name>.toml
   profiles/
@@ -918,8 +924,9 @@ Notes:
 - `repository` stores binary internal metadata such as repository ID, repository format version, object format version, hash algorithm, metadata encoding, canonical compression profile, object layout, encryption mode, key derivation public parameters, and creation time.
 - `config.toml` stores repository policy such as retention defaults, recovery record defaults, filesystem metadata capture defaults, and extension policy.
 - `local/config.toml` stores client-local configuration such as remotes, credential references, restore defaults, service settings, and UI preferences.
-- `profiles` stores reusable policy bundles applied by jobs before job-local overrides.
-- `jobs` stores repeatable snapshot job definitions such as source roots, schedules, filters, and per-job capture overrides.
+- `sources` stores stable source definitions referenced by jobs.
+- `profiles` stores reusable policy bundles applied by sources, jobs, and source references before local overrides.
+- `jobs` stores repeatable snapshot job definitions such as source references, schedules, filters, and per-job capture overrides.
 - `lock` prevents multiple processes from writing to the repository at the same time.
 - `objects` stores untyped physical object envelopes keyed by object ID.
 - `packs` stores immutable packed object files and pack indexes.
@@ -1010,11 +1017,11 @@ Suggested capabilities:
 
 ### 6.2 Scanner
 
-Scans source roots and produces candidate entries.
+Resolves source references to source roots and produces candidate entries.
 
 Suggested capabilities:
 
-- Resolve configured source roots.
+- Resolve configured source references to source definitions.
 - Enforce unique root IDs within a snapshot.
 - Walk directories.
 - Apply include and exclude rules.
