@@ -85,7 +85,7 @@ Repository configuration is stored in `config.toml`. It contains portable reposi
 - Filesystem metadata capture default.
 - Extension policy.
 
-Source configuration is stored in `sources/*.toml` or a user-level source directory. It contains stable tracked root definitions such as source ID, source kind, current path, display name, default profiles, filters, and metadata policy.
+Source configuration is stored in `sources/*.toml` or a user-level source directory. It contains stable tracked root definitions such as immutable `source_id` UUID, mutable source name, source kind, current path, display name, default profiles, filters, and metadata policy.
 
 Profile configuration is stored in `profiles/*.toml` or a user-level profile directory. It contains reusable policy bundles such as metadata defaults, filters, and chunking rules.
 
@@ -129,19 +129,21 @@ RepositoryStore backends include file-tree repositories, remote tree/object repo
 
 ### 3.1 Snapshots Are Complete Multi-Root Views
 
-Each snapshot should fully describe the source root set at a point in time. A source root represents one tracked directory or regular file with a stable root ID, a display name, a captured source path, a source root kind, source-specific filters, and required metadata.
+Each snapshot should fully describe the source root set at a point in time. A source root represents one tracked directory or regular file with an immutable source ID, a captured source name, a display name, a captured source path, a source root kind, source-specific filters, and required metadata.
 
 Restoring an arbitrary snapshot uses the snapshot's own complete root set. Restore commands can restore every root, a selected root, or selected paths inside selected roots.
 
-Snapshot-relative paths are scoped by root ID:
+Source IDs are canonical lowercase UUID text and are unique within a snapshot. Source names are mutable user-facing aliases that match `[a-z][a-z0-9._-]{0,63}`.
+
+Snapshot display paths are scoped by captured source name:
 
 ```text
-<root-id>/<relative-path>
+<source-name>/<relative-path>
 ```
 
-The captured source path is display and audit metadata. Object identity and snapshot path identity use root IDs and relative paths.
+The captured source name, display name, and source path are display and audit metadata. Internal snapshot identity uses source IDs and relative paths.
 
-Root IDs match `[a-z][a-z0-9._-]{0,63}` and are unique within a snapshot. Overlapping source paths are valid and remain separate logical roots.
+Overlapping source paths are valid and remain separate logical roots.
 
 ### 3.2 Content-Addressed Storage
 
@@ -797,7 +799,7 @@ restore_errors = "warn"
 
 Capture profile values:
 
-- `portable` captures root-scoped snapshot-relative path, entry type, target reference, logical size, modified time, executable bit, read-only bit, and symbolic link target.
+- `portable` captures source-scoped display path, entry type, target reference, logical size, modified time, executable bit, read-only bit, and symbolic link target.
 - `system` captures `portable` fields plus POSIX mode, uid, gid, user name, group name, and Windows file attributes.
 - `full` captures `system` fields plus ACLs, extended attributes, macOS flags, macOS resource fork metadata, Windows security descriptor, and Windows reparse point metadata.
 
@@ -815,11 +817,11 @@ Capture profile resolution uses command invocation overrides, job configuration,
 
 The snapshot model should support sparse restore: restoring only selected paths or path patterns from a snapshot.
 
-Simple sparse behavior can be implemented by loading the snapshot manifest and filtering entries. Path filters may include a root ID prefix:
+Simple sparse behavior can be implemented by loading the snapshot manifest and filtering entries. Path filters may include a source name selector. Commands resolve source names to source IDs before matching snapshot roots:
 
 ```text
 kaca restore <snapshot-id> <target> --path docs/readme.md
-kaca restore <snapshot-id> <target> --root work --path docs/readme.md
+kaca restore <snapshot-id> <target> --source work --path docs/readme.md
 kaca restore <snapshot-id> <target> --include "src/**" --exclude "build/**"
 ```
 
@@ -898,7 +900,7 @@ repository/
   local/
     config.toml
   sources/
-    <source-id>.toml
+    <source-name>.toml
   jobs/
     <job-name>.toml
   profiles/
@@ -992,7 +994,7 @@ The example below is JSON for readability. The stored snapshot object should use
 Snapshot payload requirements:
 
 - The root list contains one or more source roots.
-- Each source root records root ID, display name, source root kind, captured source path display information, filter summary, case sensitivity policy, and root content entries.
+- Each source root records source ID, captured source name, display name, source root kind, captured source path display information, filter summary, case sensitivity policy, and root content entries.
 - Directory, regular file, symbolic link, hard link, and special file entries use structured tree entry records.
 - Regular file entries support whole-file content references and ordered chunked content references.
 - Captured metadata follows the active metadata capture profile.
@@ -1022,7 +1024,7 @@ Resolves source references to source roots and produces candidate entries.
 Suggested capabilities:
 
 - Resolve configured source references to source definitions.
-- Enforce unique root IDs within a snapshot.
+- Enforce unique source IDs within a snapshot.
 - Walk directories.
 - Apply include and exclude rules.
 - Handle symbolic link policy.
@@ -1192,7 +1194,7 @@ kaca init <repository> --encrypt
 kaca init zip:file:///<archive-path>
 kaca init bundle:file:///<bundle-path>
 kaca snapshot <source>... --repo <repository>
-kaca snapshot --source <root-id>=<source-path> --source <root-id>=<source-path> --repo <repository>
+kaca snapshot --source <source-name>=<source-path> --source <source-name>=<source-path> --repo <repository>
 kaca snapshot <source>... --repo <repository> --metadata-capture portable|system|full
 kaca list --repo <repository>
 kaca show <snapshot-id> --repo <repository>
@@ -1200,10 +1202,10 @@ kaca diff <from-snapshot-id> <to-snapshot-id> --repo <repository>
 kaca restore <snapshot-id> <target> --repo <repository>
 kaca restore <snapshot-id> <target> --repo <repository> --metadata-restore portable|system|full
 kaca restore <snapshot-id> <target> --repo <repository> --path <path>
-kaca restore <snapshot-id> <target> --repo <repository> --root <root-id>
+kaca restore <snapshot-id> <target> --repo <repository> --source <source-name-or-id>
 kaca restore <snapshot-id> <target> --repo <repository> --include <pattern> --exclude <pattern>
 kaca verify --repo <repository>
-kaca prune --repo <repository> --keep-daily 7 --keep-weekly 4
+kaca prune --repo <repository> --retention
 kaca stats --repo <repository>
 kaca config get <key> --repo <repository> --show-origin
 kaca config list --repo <repository> --show-origin
@@ -1300,7 +1302,7 @@ When a newer program opens an older repository, it must clearly decide:
 The internal path format is:
 
 - Use `/` as the path separator inside manifests.
-- Store only root-scoped snapshot-relative entry paths.
+- Store source-scoped display paths for diagnostics and source-relative entry paths for structured metadata.
 - Store tree entry names as single path segments.
 - Reject empty path segments, `.`, `..`, path separators inside entry names, NUL, and ASCII control characters.
 - Keep captured source root paths only for display and audit.

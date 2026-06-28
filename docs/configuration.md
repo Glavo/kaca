@@ -31,7 +31,7 @@ Configuration file locations:
 | User configuration | user configuration directory, `kaca/config.toml` |
 | Repository configuration | `<repository>/config.toml` |
 | Repository-local client configuration | `<repository>/local/config.toml` |
-| Source configuration | `<repository>/sources/<source-id>.toml` or user configuration source directory |
+| Source configuration | `<repository>/sources/<source-name>.toml` or user configuration source directory |
 | Profile configuration | `<repository>/profiles/<profile-name>.toml` or user configuration profile directory |
 | Job configuration | `<repository>/jobs/<job-name>.toml` or user configuration job directory |
 
@@ -198,7 +198,7 @@ Chunking rules are evaluated in order. The first matching rule supplies the chun
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `id` | string | required | Stable rule ID used for keyed merge and diagnostics. |
-| `glob` | glob pattern | required | Snapshot-relative path pattern. |
+| `glob` | glob pattern | required | Source-scoped display path pattern. |
 | `strategy` | string | required | Chunking strategy. |
 | `block_size` | size | required for `fixed-size` | Fixed chunk size. |
 | `min_size` | size | required for `cdc` | Minimum CDC chunk size. |
@@ -214,7 +214,7 @@ Chunking strategy values:
 | `"cdc"` | Split matching files with content-defined chunking. |
 | `"adaptive"` | Let the implementation choose from available strategies with recorded diagnostics. |
 
-Profile names use the same syntax as source IDs: `[a-z][a-z0-9._-]{0,63}`.
+Profile names use the same syntax as source names: `[a-z][a-z0-9._-]{0,63}`.
 
 ## 4. Client Configuration
 
@@ -375,11 +375,12 @@ Plain secret values are stored outside configuration files.
 
 ## 5. Source Configuration
 
-Source configuration files define stable tracked roots. They do not schedule snapshots by themselves. Jobs include sources through `[[source_refs]]` entries.
+Source configuration files define stable tracked roots. Repository source configuration is stored as `sources/<source-name>.toml`. The file name and `name` field use the mutable source name. The immutable source identity is `source_id`.
 
 ```toml
 source_version = 1
-id = "world-a"
+source_id = "018f4c8b-2d4d-7a1c-9a4f-2f7d6d0e8a31"
+name = "world-a"
 kind = "directory"
 path = "D:/Minecraft/.minecraft/versions/1.21.1/saves/world-a"
 display_name = "World A"
@@ -398,17 +399,26 @@ exclude = []
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `source_version` | integer | required | Source configuration format version. |
-| `id` | string | required | Stable root ID used in snapshot-relative paths. |
+| `source_id` | UUID string | required | Immutable source identity. |
+| `name` | string | required | Mutable source name used by users, file names, CLI, and job references. |
 | `kind` | string | `"directory"` | Source root kind. |
 | `path` | locator | required | Source locator scanned for this root. |
-| `display_name` | string | `id` | User-facing source name. |
+| `display_name` | string | `name` | User-facing source label. |
 | `profiles` | array of strings | absent | Profiles applied before source-local settings. |
 
-Source IDs match:
+Source IDs are canonical lowercase UUID text:
+
+```text
+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
+```
+
+Source names match:
 
 ```text
 [a-z][a-z0-9._-]{0,63}
 ```
+
+Repository source file names match the source name: `sources/<source-name>.toml`. Source names are unique after layer resolution. Source IDs are unique after layer resolution and remain unchanged when the source name or source path changes.
 
 Source `kind` values:
 
@@ -417,7 +427,7 @@ Source `kind` values:
 | `"directory"` | Scan a directory tree. |
 | `"file"` | Scan one regular file as a source root. |
 
-The source ID is the logical identity of the tracked root. The `path` value is the current scan location and may change without changing source identity. Snapshots record the captured source path as display and audit metadata.
+Snapshots use `source_id` as the logical identity of the tracked root. The `name`, `display_name`, and `path` values are captured for display, audit, and source resolution metadata.
 
 Overlapping source paths are valid. Each source remains a separate logical root identified by its source ID.
 
@@ -480,14 +490,17 @@ Each source reference selects one source definition for snapshots created by the
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `source` | string | required | Referenced source ID. |
+| `source` | string | absent | Current source name used for user-authored configuration. |
+| `source_id` | UUID string | absent | Immutable source ID used for generated, migration, and repair configuration. |
 | `profiles` | array of strings | absent | Profiles applied for this source binding. |
 | `include` | array of strings | resolved | Include patterns for this source binding. |
 | `exclude` | array of strings | resolved | Exclude patterns for this source binding. |
 
-Each source reference expands to one snapshot root. The snapshot root ID is the referenced source ID, and snapshot-relative paths use `<source-id>/<relative-path>`.
+Each source reference contains exactly one of `source` or `source_id`. The `source` field resolves through the current source name table. The `source_id` field resolves directly to the matching source definition.
 
-A job references a source at most once. Overlapping source paths are valid and remain separate logical roots.
+Each resolved source reference expands to one snapshot root. The snapshot root identity is the resolved source ID. Display paths use the captured source name and relative path.
+
+A job references a source at most once after source resolution. Overlapping source paths are valid and remain separate logical roots.
 
 ### 6.3 `[source_refs.metadata]`
 
@@ -539,6 +552,7 @@ Configuration values are parsed according to the schema field type.
 | duration | ISO-8601 duration string | `"PT30S"`, `"PT5M"`, `"PT24H"` |
 | period | ISO-8601 period string | `"P30D"`, `"P6M"`, `"P2Y"` |
 | temporal amount | ISO-8601 duration or period string | `"PT1H"`, `"P1D"`, `"P1M"` |
+| UUID string | canonical lowercase UUID text | `"018f4c8b-2d4d-7a1c-9a4f-2f7d6d0e8a31"` |
 | percentage | integer | `10` |
 | locator | string | `"D:/backup"`, `"s3://bucket/repo"` |
 | glob pattern | string | `"**/region/*.mca"` |
@@ -557,7 +571,7 @@ Short unit forms such as `30s`, `10m`, `24h`, and `30d` are not valid configurat
 
 Calendar expressions are parsed only by scheduling components.
 
-Locator values follow `docs/storage-backends.md`. Glob patterns match root-scoped snapshot-relative paths.
+UUID string values use canonical lowercase text with hyphen separators. Locator values follow `docs/storage-backends.md`. Glob patterns match source-scoped display paths such as `<source-name>/<relative-path>`.
 
 ## 9. Merge Rules
 
@@ -578,7 +592,7 @@ Keyed array merge rules:
 | Field | Key | Rule |
 |---|---|---|
 | `[[remotes]]` | `name` | Higher-layer entry replaces the lower-layer entry with the same name. |
-| `[[source_refs]]` | `source` | Job-local entries define the job source reference set. |
+| `[[source_refs]]` | resolved `source_id` | Job-local entries define the job source reference set. |
 | `[[chunking.rules]]` | `id` | Higher-layer rule replaces the lower-layer rule with the same ID. |
 | `[[policy.retention.rules]]` | `id` | Higher-layer rule replaces the lower-layer rule with the same ID. |
 
@@ -687,13 +701,16 @@ The parser validates:
 - Required job fields.
 - At least one source reference for each job.
 - Unique source IDs across resolved source definitions.
-- Unique source references within each job.
-- Valid source ID syntax.
+- Unique source names across resolved source definitions.
+- Unique resolved source references within each job.
+- Valid source ID UUID syntax.
+- Valid source name syntax.
+- Matching repository source file names and source names.
 - Valid source root kind values.
-- Valid source references.
+- Valid source references by source name or source ID.
 - Valid include paths and include cycle absence.
 - Valid profile references and profile cycle absence.
-- Valid typed values for size, duration, period, temporal amount, locator, glob pattern, credential reference, and calendar expression.
+- Valid typed values for size, duration, period, temporal amount, UUID string, locator, glob pattern, credential reference, and calendar expression.
 - Valid keyed merge identifiers.
 - Secret policy compliance.
 - Migration compatibility for deprecated keys and old format versions.
