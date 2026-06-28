@@ -89,13 +89,20 @@ Source configuration is stored in `sources/*.toml` or a user-level source direct
 
 Profile configuration is stored in `profiles/*.toml` or a user-level profile directory. It contains reusable policy bundles such as metadata defaults, filters, and chunking rules.
 
+Remote configuration is stored in `remotes/*.toml`. It contains portable synchronization endpoint definitions such as immutable `remote_id` UUID, mutable remote name, backend kind, locator, trust level, and sync policy.
+
 Repository-local client configuration is stored in `local/config.toml`. It contains machine-specific and client-specific defaults:
 
-- Remotes.
-- Credential references.
 - Restore defaults.
 - UI preferences.
 - Service settings.
+- Default remote selection.
+
+Repository-local remote overrides are stored in `local/remotes/*.toml`. They contain machine-local remote settings:
+
+- Credential references.
+- Connection timeouts.
+- Client-local transfer limits.
 
 Job configuration is stored in `jobs/*.toml` or a user-level job directory. It contains repeatable snapshot task definitions:
 
@@ -900,12 +907,16 @@ repository/
   lock
   local/
     config.toml
+    remotes/
+      <remote-name>.toml
   sources/
     <source-name>.toml
   jobs/
     <job-name>.toml
   profiles/
     <profile-name>.toml
+  remotes/
+    <remote-name>.toml
   objects/
     ab/
       abcdef...
@@ -926,10 +937,12 @@ Notes:
 
 - `repository` stores binary internal metadata such as repository ID, repository format version, object format version, hash algorithm, metadata encoding, canonical compression profile, object layout, encryption mode, key derivation public parameters, and creation time.
 - `config.toml` stores repository policy such as retention defaults, recovery record defaults, filesystem metadata capture defaults, and extension policy.
-- `local/config.toml` stores client-local configuration such as remotes, credential references, restore defaults, service settings, and UI preferences.
+- `local/config.toml` stores client-local configuration such as restore defaults, service settings, UI preferences, and default remote selection.
+- `local/remotes` stores client-local remote overrides such as credential references, connection timeouts, and client-local transfer limits.
 - `sources` stores stable source definitions referenced by jobs.
 - `profiles` stores reusable policy bundles applied by sources, jobs, and source references before local overrides.
 - `jobs` stores repeatable snapshot job definitions such as source references, schedules, ordered filter rules, and per-job capture overrides.
+- `remotes` stores portable remote definitions referenced by synchronization commands.
 - `lock` prevents multiple processes from writing to the repository at the same time.
 - `objects` stores the object database, including loose object envelopes keyed by object ID and immutable pack files plus pack indexes under `objects/packs`.
 - `snapshots` stores mutable snapshot records that point to immutable snapshot metadata payloads.
@@ -1173,7 +1186,7 @@ Manages synchronization between RepositoryStore backends.
 
 Suggested capabilities:
 
-- Configure repository backend endpoints.
+- Manage portable remote definitions and client-local remote overrides.
 - Build remote inventory.
 - Upload missing immutable objects.
 - Download missing immutable objects.
@@ -1430,9 +1443,9 @@ Basic test scenarios:
 - Verify that recovery records detect physical file corruption.
 - Verify that recovery records can repair a damaged protected file when enough redundancy is available.
 - Verify that external recovery records can be matched to the correct repository by repository ID.
-- Verify layered configuration precedence from system, user, repository, repository-local, job, and command invocation layers.
+- Verify layered configuration precedence from system, user, repository, repository-local, remote, local remote override, job, and command invocation layers.
 - Verify that effective configuration diagnostics report the source file and layer for resolved values.
-- Verify that repository-local remote definitions override lower-layer remotes with the same name.
+- Verify that local remote overrides apply to matching remote definitions by remote ID or remote name.
 - Create a chunked large-file snapshot and restore it byte-for-byte.
 - Verify that file-level content hash is independent of chunk boundaries.
 - Verify that chunk boundaries respect `minSize` and `maxSize`.

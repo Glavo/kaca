@@ -2,7 +2,7 @@
 
 This document defines the user-editable configuration files used by `kaca`.
 
-Repository identity, object identity, digest profiles, object layout, canonical compression profile, encryption mode, and repository format versions are stored in `repository`. Configuration files store policy, defaults, local client settings, repository endpoints, source definitions, and job definitions.
+Repository identity, object identity, digest profiles, object layout, canonical compression profile, encryption mode, and repository format versions are stored in `repository`. Configuration files store policy, defaults, local client settings, remote definitions, local remote overrides, source definitions, and job definitions.
 
 ## 1. Configuration Layers
 
@@ -31,13 +31,15 @@ Configuration file locations:
 | User configuration | user configuration directory, `kaca/config.toml` |
 | Repository configuration | `<repository>/config.toml` |
 | Repository-local client configuration | `<repository>/local/config.toml` |
+| Remote configuration | `<repository>/remotes/<remote-name>.toml` |
+| Repository-local remote override | `<repository>/local/remotes/<remote-name>.toml` |
 | Source configuration | `<repository>/sources/<source-name>.toml` or user configuration source directory |
 | Profile configuration | `<repository>/profiles/<profile-name>.toml` or user configuration profile directory |
 | Job configuration | `<repository>/jobs/<job-name>.toml` or user configuration job directory |
 
 The parser accepts the keys defined for the file's layer. Extension data is stored under `[extensions.<name>]`.
 
-Repository synchronization includes repository configuration and repository state. Repository-local client configuration is resolved by the local client that owns the `local` directory.
+Repository synchronization includes repository configuration, remote configuration, and repository state. Repository-local client configuration and local remote overrides are resolved by the local client that owns the `local` directory.
 
 Repository and source locations may be local paths or backend locators as defined in `docs/storage-backends.md`.
 
@@ -195,7 +197,7 @@ block_size = "1MiB"
 
 ### 3.3 `[filters]`
 
-The `[filters]` table uses the shared filter schema defined in Section 7. Profile filter rules are applied when the profile is applied.
+The `[filters]` table uses the shared filter schema defined in Section 8. Profile filter rules are applied when the profile is applied.
 
 ### 3.4 `[[chunking.rules]]`
 
@@ -247,13 +249,8 @@ listen = "127.0.0.1:0"
 theme = "system"
 locale = "en-US"
 
-[[remotes]]
-name = "origin"
-kind = "sftp"
-url = "sftp://backup.example.com/kaca/repository"
-trust = "untrusted"
-credentials = "keyring:kaca/origin"
-connections = 4
+[sync]
+default_remote = "origin"
 ```
 
 ### 4.1 Top-Level Keys
@@ -332,30 +329,46 @@ Metadata profile values:
 | `"light"` |
 | `"dark"` |
 
-### 4.6 `[[remotes]]`
+### 4.6 `[sync]`
 
-Each remote entry defines one RepositoryStore synchronization target for the active client.
-
-| Key | Type | Required | Description |
+| Key | Type | Default | Description |
 |---|---|---|---|
-| `name` | string | yes | Unique remote name. |
-| `kind` | string | yes | Remote backend kind. |
-| `url` | string | yes | Remote location. |
-| `trust` | string | no | Remote trust level. Default: `"untrusted"`. |
-| `credentials` | string | no | Credential reference. |
-| `connections` | integer | no | Maximum concurrent transfer count. |
+| `default_remote` | string | absent | Default remote name used by synchronization commands when no remote is supplied. |
+
+## 5. Remote Configuration
+
+Repository remote configuration files define portable RepositoryStore synchronization endpoints. Repository remote configuration is stored as `remotes/<remote-name>.toml`. The file name and `name` field use the mutable remote name. The immutable remote identity is `remote_id`.
+
+```toml
+remote_version = 1
+remote_id = "018f4c8b-8f90-7fe4-a2be-2f7d6d0e8a31"
+name = "origin"
+kind = "sftp-tree"
+locator = "sftp://backup.example.com/kaca/repository"
+trust = "untrusted"
+
+[sync]
+connections = 4
+```
+
+### 5.1 Top-Level Keys
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `remote_version` | integer | required | Remote configuration format version. |
+| `remote_id` | UUID string | required | Immutable remote identity. |
+| `name` | string | required | Mutable remote name used by commands and file names. |
+| `kind` | string | required | RepositoryStore backend kind. |
+| `locator` | locator | required | Portable remote repository locator. |
+| `trust` | string | `"untrusted"` | Remote trust level. |
 
 Remote `kind` values:
 
 | Value |
 |---|
-| `"local"` |
 | `"file-tree"` |
-| `"sftp"` |
 | `"sftp-tree"` |
-| `"s3"` |
 | `"s3-object"` |
-| `"webdav"` |
 | `"webdav-tree"` |
 | `"rest"` |
 | `"zip-archive"` |
@@ -367,19 +380,38 @@ Remote `trust` values:
 | Value | Meaning |
 |---|---|
 | `"trusted"` | Remote storage is treated as controlled infrastructure. |
-| `"untrusted"` | Remote storage receives encrypted repository data when encryption is enabled. |
+| `"untrusted"` | Remote storage is verified as untrusted repository storage. |
 
-Credential references identify an external credential source:
+### 5.2 `[sync]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `connections` | integer | absent | Portable maximum concurrent transfer count for this remote. |
+| `read_only` | boolean | `false` | Marks the remote as unavailable for push operations. |
+
+### 5.3 Local Remote Overrides
+
+Repository-local remote override files store client-local settings for a remote. They are stored as `local/remotes/<remote-name>.toml` and are not synchronized.
 
 ```toml
-credentials = "env:KACA_REMOTE_ORIGIN_PASSWORD"
-credentials = "keyring:kaca/origin"
-credentials = "file:secrets/origin.credentials"
+remote = "origin"
+remote_id = "018f4c8b-8f90-7fe4-a2be-2f7d6d0e8a31"
+credential = "keyring:kaca/origin"
+connect_timeout = "PT30S"
+connections = 4
 ```
 
-Plain secret values are stored outside configuration files.
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `remote` | string | file name | Remote name selected by the override. |
+| `remote_id` | UUID string | absent | Immutable remote identity used to validate the selected remote. |
+| `credential` | credential reference | absent | Client-local credential reference. |
+| `connect_timeout` | duration | absent | Client-local connection timeout. |
+| `connections` | integer | absent | Client-local concurrent transfer limit. |
 
-## 5. Source Configuration
+A local remote override selects the remote by `remote_id` when present and by `remote` or file name otherwise. Plain secret values are invalid in local remote overrides.
+
+## 6. Source Configuration
 
 Source configuration files define stable tracked roots. Repository source configuration is stored as `sources/<source-name>.toml`. The file name and `name` field use the mutable source name. The immutable source identity is `source_id`.
 
@@ -404,7 +436,7 @@ action = "exclude"
 pattern = "cache/**"
 ```
 
-### 5.1 Top-Level Keys
+### 6.1 Top-Level Keys
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -441,17 +473,17 @@ Snapshots use `source_id` as the logical identity of the tracked root. The `path
 
 Overlapping source paths are valid. Each source remains a separate logical root identified by its source ID.
 
-### 5.2 `[metadata]`
+### 6.2 `[metadata]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `capture` | string | resolved | Filesystem metadata capture profile for snapshots of this source. |
 
-### 5.3 `[filters]`
+### 6.3 `[filters]`
 
-The `[filters]` table uses the shared filter schema defined in Section 7. Source filter rules are source defaults inherited by jobs that reference the source.
+The `[filters]` table uses the shared filter schema defined in Section 8. Source filter rules are source defaults inherited by jobs that reference the source.
 
-## 6. Job Configuration
+## 7. Job Configuration
 
 Job configuration files define repeatable snapshot tasks. A job references source definitions and supplies scheduling plus job-local policy.
 
@@ -497,7 +529,7 @@ action = "exclude"
 pattern = "tmp/**"
 ```
 
-### 6.1 Top-Level Keys
+### 7.1 Top-Level Keys
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -506,7 +538,7 @@ pattern = "tmp/**"
 | `repository` | string | absent | Repository locator for user-level job files. |
 | `profiles` | array of strings | absent | Profiles applied before job-local settings. |
 
-### 6.2 `[[source_refs]]`
+### 7.2 `[[source_refs]]`
 
 Each source reference selects one source definition for snapshots created by the job.
 
@@ -523,19 +555,19 @@ Each resolved source reference expands to one snapshot root. The snapshot root i
 
 A job references a source at most once after source resolution. Overlapping source paths are valid and remain separate logical roots.
 
-### 6.3 `[source_refs.metadata]`
+### 7.3 `[source_refs.metadata]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `capture` | string | resolved | Filesystem metadata capture profile for this source binding. |
 
-### 6.4 `[metadata]`
+### 7.4 `[metadata]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `capture` | string | resolved | Filesystem metadata capture profile for snapshots created by the job. |
 
-### 6.5 `[schedule]`
+### 7.5 `[schedule]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -544,11 +576,11 @@ A job references a source at most once after source resolution. Overlapping sour
 
 The calendar expression format is a separate scheduler interface decision.
 
-### 6.6 `[filters]`
+### 7.6 `[filters]`
 
-The `[filters]` table uses the shared filter schema defined in Section 7. Job filter rules are inherited by every source reference in the job unless a source reference overrides the effective rule list.
+The `[filters]` table uses the shared filter schema defined in Section 8. Job filter rules are inherited by every source reference in the job unless a source reference overrides the effective rule list.
 
-## 7. Filter Configuration
+## 8. Filter Configuration
 
 Filter tables appear as `[filters]` under profiles, sources, and jobs. Source references use `[source_refs.filters]`. All filter tables use the same schema.
 
@@ -568,7 +600,7 @@ action = "include"
 pattern = "logs/latest.log"
 ```
 
-### 7.1 `[filters]`
+### 8.1 `[filters]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -582,7 +614,7 @@ pattern = "logs/latest.log"
 | `"include"` | Include unmatched entries. |
 | `"exclude"` | Exclude unmatched entries. |
 
-### 7.2 `[[filters.rules]]`
+### 8.2 `[[filters.rules]]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -607,7 +639,7 @@ Entry matching starts with `default_action` and then evaluates rules in order. E
 
 Snapshot filter summaries record the resolved default action and ordered effective rule list.
 
-## 8. Extensions
+## 9. Extensions
 
 Extensions use namespaced tables:
 
@@ -619,7 +651,7 @@ value = "custom"
 
 Extension names are lowercase ASCII identifiers containing letters, digits, `_`, and `-`.
 
-## 9. Value Types
+## 10. Value Types
 
 Configuration values are parsed according to the schema field type.
 
@@ -650,7 +682,7 @@ Calendar expressions are parsed only by scheduling components.
 
 UUID string values use canonical lowercase text with hyphen separators. Locator values follow `docs/storage-backends.md`. Glob pattern fields define their own match root. Filter rule patterns are source-relative; chunking rule patterns are source-qualified paths such as `<source-name>/<relative-path>` or `<source-id>/<relative-path>`.
 
-## 10. Merge Rules
+## 11. Merge Rules
 
 Effective configuration is built with schema-aware merge rules.
 
@@ -668,7 +700,6 @@ Keyed array merge rules:
 
 | Field | Key | Rule |
 |---|---|---|
-| `[[remotes]]` | `name` | Higher-layer entry replaces the lower-layer entry with the same name. |
 | `[[source_refs]]` | resolved `source_id` | Job-local entries define the job source reference set. |
 | `[[filters.rules]]` | `id` | A same-ID local rule removes the accumulated rule and appends the local rule. |
 | `[[chunking.rules]]` | `id` | Higher-layer rule replaces the lower-layer rule with the same ID. |
@@ -687,21 +718,21 @@ Source binding application order:
 
 Profile cycles are invalid. Duplicate profile names at the same layer are invalid.
 
-## 11. Secret Policy
+## 12. Secret Policy
 
 Configuration files store credential references only.
 
 Allowed credential references:
 
 ```toml
-credentials = "env:KACA_REMOTE_ORIGIN_PASSWORD"
-credentials = "keyring:kaca/origin"
-credentials = "file:secrets/origin.credentials"
+credential = "env:KACA_REMOTE_ORIGIN_PASSWORD"
+credential = "keyring:kaca/origin"
+credential = "file:secrets/origin.credentials"
 ```
 
 Plaintext password, token, access key, secret key, and private key values are invalid in configuration files. The validator reports keys whose names or values match secret-like patterns unless the field type is credential reference.
 
-## 12. Synchronization and Protection Policy
+## 13. Synchronization and Protection Policy
 
 Repository state protection by file class:
 
@@ -712,12 +743,14 @@ Repository state protection by file class:
 | `sources/*.toml` | yes | yes | Stable source definitions. |
 | `jobs/*.toml` | yes | yes | Repeatable job definitions. |
 | `profiles/*.toml` | yes | yes | Reusable policy bundles. |
-| `local/config.toml` | no | optional | Machine-local settings and credential references. |
+| `remotes/*.toml` | yes | yes | Portable remote definitions. |
+| `local/config.toml` | no | optional | Machine-local settings. |
+| `local/remotes/*.toml` | no | optional | Machine-local remote overrides and credential references. |
 | system/user config | no | no | Protected only when explicitly configured as a source. |
 
-Synchronization treats repository configuration, source configuration, job configuration, and profile configuration as repository state. Repository-local client configuration is evaluated by the client that owns the `local` directory.
+Synchronization treats repository configuration, source configuration, job configuration, profile configuration, and remote configuration as repository state. Repository-local client configuration and local remote overrides are evaluated by the client that owns the `local` directory.
 
-## 13. Compatibility and Migration
+## 14. Compatibility and Migration
 
 Configuration files carry explicit format versions.
 
@@ -732,7 +765,7 @@ Compatibility rules:
 
 `kaca config validate` validates every configuration layer. `kaca config migrate` rewrites compatible old configuration files to the current schema.
 
-## 14. Value Resolution
+## 15. Value Resolution
 
 Effective values are resolved with origin tracking. Diagnostics and `config get` output include the layer and file path that supplied each value.
 
@@ -761,19 +794,19 @@ system [restore]
 built-in default
 ```
 
-Repository endpoint definitions are keyed by remote name. A higher-layer endpoint with the same name replaces the lower-layer endpoint.
+Remote definitions are resolved from repository `remotes/*.toml`. Local remote overrides are applied from `local/remotes/*.toml` for the current client. Commands may select a remote by name or remote ID.
 
-## 15. Validation Rules
+## 16. Validation Rules
 
 The parser validates:
 
-- Configuration, source, profile, and job format versions.
+- Configuration, source, profile, job, and remote format versions.
 - Allowed sections for each configuration layer.
 - Field types.
 - Enum values.
 - Valid retention rule structure.
 - Recovery redundancy range.
-- Unique remote names after layer resolution.
+- Unique remote IDs and remote names after layer resolution.
 - Extension table names.
 - Required source fields.
 - Required job fields.
@@ -786,6 +819,8 @@ The parser validates:
 - Matching repository source file names and source names.
 - Valid source root kind values.
 - Valid source references by source name or source ID.
+- Matching repository remote file names and remote names.
+- Valid local remote override references by remote name or remote ID.
 - Valid include-file paths and include cycle absence.
 - Valid profile references and profile cycle absence.
 - Valid typed values for size, duration, period, temporal amount, UUID string, locator, glob pattern, credential reference, and calendar expression.

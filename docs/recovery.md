@@ -111,6 +111,9 @@ Default protected file kinds:
 | `source-config` | yes |
 | `job-config` | yes |
 | `profile-config` | yes |
+| `remote-config` | yes |
+| `local-config` | no |
+| `local-remote-config` | no |
 | `snapshot-record` | yes |
 | `loose-object` | yes |
 | `pack` | yes |
