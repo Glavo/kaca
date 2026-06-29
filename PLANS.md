@@ -56,7 +56,9 @@ Repository metadata and user-editable configuration are separate concerns.
 - Repository format version.
 - Object format version.
 - Metadata encoding.
-- Hash algorithm.
+- Content digest profile.
+- Object ID digest profile.
+- Pack ID digest profile.
 - Canonical compression profile.
 - Object layout.
 - Encryption mode.
@@ -166,6 +168,8 @@ Conceptually:
 objectId = hash(canonicalLogicalBytes)
 ```
 
+Object IDs store digest bytes only. The repository object ID digest profile defines how those bytes are computed and interpreted.
+
 For unencrypted repositories, `objectId` and `contentHash` are the same value. For encrypted repositories, `contentHash` may exist only inside encrypted metadata, while the public `objectId` is keyed.
 
 Identity fields:
@@ -196,18 +200,18 @@ Physical layout:
 ```text
 objects/
   ab/
-    <full-object-id>
+    <object-id>
   packs/
     <pack-id>.pack
     <pack-id>.idx
 ```
 
-The object file name is the complete object ID. The fanout directory repeats the first two hex characters for directory distribution.
+The object file name is the lowercase hexadecimal encoding of the object ID bytes. The fanout directory repeats the first two hex characters of that encoding for directory distribution.
 
 Object paths use fixed one-level fanout:
 
 ```text
-objects/<first-two-hex>/<full-object-id>
+objects/<first-two-hex>/<object-id>
 ```
 
 The path builder is centralized. Fanout is fixed by the repository format. `objects/packs/` is a reserved object store subdirectory and is not a loose object fanout directory.
@@ -269,7 +273,7 @@ pack record := record-header + object-id + object-envelope
 
 Object verification, compression, encryption, and metadata parsing are identical for loose objects and packed objects.
 
-The pack ID is a digest value for the physical pack records. The pack file name and pack index file name use lowercase hexadecimal encoding of the complete pack ID digest value. Pack IDs identify transfer units, while object IDs remain the authoritative identity for repository contents.
+The pack ID is digest bytes for the physical pack records under the repository pack ID digest profile. The pack file name and pack index file name use lowercase hexadecimal encoding of the pack ID bytes. Pack IDs identify transfer units, while object IDs remain the authoritative identity for repository contents.
 
 Pack files are immutable. New objects are written as loose objects or into new pack files. Pack replacement is performed by writing replacement packs and publishing them atomically. Repository correctness does not depend on mutable pack state.
 
@@ -298,7 +302,7 @@ The repository defines how object identity is verified and how collision-like in
 Rules:
 
 - Use only cryptographic hashes for object identity.
-- Record the hash algorithm in the `repository` file.
+- Record repository digest profiles in the `repository` file.
 - Use canonical logical bytes as the object hash input.
 - Store logical content size in the object header.
 - Treat object equality as byte identity by object ID.
@@ -331,7 +335,7 @@ For same-ID, same-size collision concerns, use a stronger hash, a secondary hash
 When adding an object whose ID already exists:
 
 - Check that logical size matches.
-- Check that the repository hash algorithm is compatible with the object ID.
+- Check that the object ID length matches the repository object ID digest profile.
 - In normal mode, trust the cryptographic object ID after header validation.
 - In high-assurance mode, read the existing object and compare logical bytes before reusing it.
 
@@ -956,7 +960,7 @@ world.kaca.local/
 
 Notes:
 
-- `share/repository` stores binary internal metadata such as repository ID, repository format version, object format version, hash algorithm, metadata encoding, canonical compression profile, object layout, encryption mode, key derivation public parameters, and creation time.
+- `share/repository` stores binary internal metadata such as repository ID, repository format version, object format version, digest profiles, metadata encoding, canonical compression profile, object layout, encryption mode, key derivation public parameters, and creation time.
 - `share/config.toml` stores repository policy such as retention defaults, recovery record defaults, filesystem metadata capture defaults, and extension policy.
 - `share/sources` stores stable source definitions referenced by jobs.
 - `share/profiles` stores reusable policy bundles applied by sources, jobs, and source references before local overrides.
@@ -1073,7 +1077,7 @@ Computes file hashes.
 Suggested capabilities:
 
 - Stream-based hashing.
-- Repository-level hash algorithm implementation.
+- Repository-level digest profile implementation.
 - Progress reporting for large files.
 - Reserved interfaces for chunk hashing.
 

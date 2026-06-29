@@ -55,23 +55,17 @@ digest-profile-id :=
 
 `type` selects the algorithm namespace for `algorithm`. `algorithm` selects the namespace for `variant`. `output-bits` is the actual digest output length in bits.
 
-Digest values store the profile followed by the digest bytes:
-
-```text
-digest-value :=
-  digest-profile-id
-  digest-bytes
-```
+Digest fields store digest bytes only. The applicable `digest-profile-id` is stored by the containing repository file, fixed header, profile field, or schema field.
 
 The digest byte length is `output-bits / 8`.
 
-CBOR `bstr` fields named `digest profile` contain exactly the 8-byte `digest-profile-id`. CBOR `bstr` fields named `digest value` contain the complete `digest-value`.
+CBOR `bstr` fields named `digest profile` contain exactly the 8-byte `digest-profile-id`. CBOR `bstr` fields named `digest bytes` contain only the digest output bytes.
 
-Object IDs are digest values whose type is `cryptographic-hash` or `keyed-cryptographic-hash`.
+Object IDs are digest bytes computed with the repository object ID digest profile. The object ID digest profile type is `cryptographic-hash` or `keyed-cryptographic-hash`.
 
-Physical checksums are digest values whose type is `cryptographic-hash` or `fast-checksum`.
+Physical checksums are digest bytes computed with the checksum profile stored in the containing fixed header. Checksum profile type is `cryptographic-hash` or `fast-checksum`.
 
-Chunk boundary fingerprints are digest values whose type is `rolling-fingerprint`.
+Chunk boundary fingerprints are digest bytes computed with the chunker fingerprint profile. Fingerprint profile type is `rolling-fingerprint`.
 
 Digest profile registry:
 
@@ -278,6 +272,7 @@ Repository file body:
 | 11 | uint | creation time, Unix milliseconds |
 | 12 | map | default chunker profile |
 | 13 | array | enabled feature flags |
+| 14 | bstr | pack ID digest profile |
 | 20 | array | encrypted key slots |
 
 Canonical compression profile map:
@@ -295,9 +290,8 @@ Object layout map:
 | Key | Type | Field |
 |---:|---|---|
 | 1 | uint | fanout hex characters |
-| 2 | bool | full object ID file names |
 
-Version 1 uses `fanout hex characters = 2` and `full object ID file names = true`.
+Version 1 uses `fanout hex characters = 2`. Loose object file names use lowercase hexadecimal object ID bytes.
 
 Encryption mode map:
 
@@ -371,7 +365,7 @@ Fixed header:
 
 `payload length` is the stored payload length after compression and after encryption when encryption is enabled. `logical size` is the canonical logical byte length before compression, encryption, and envelope encoding.
 
-The object ID field stores a complete digest value. The object ID length field is the byte length of that digest value.
+The object ID field stores object ID digest bytes. The object ID length field is the byte length of those bytes and must match the repository object ID digest profile output length.
 
 The physical checksum is computed over `fixed-header + object-id + public-header + private-header + payload`. The `physical-checksum` field stores only digest bytes; the digest profile is stored in the fixed header.
 
@@ -404,8 +398,9 @@ Private header body uses deterministic CBOR. In encrypted objects, this body is 
 
 | Key | Type | Field |
 |---:|---|---|
-| 1 | bstr | plaintext content digest value |
-| 2 | bstr | secondary plaintext digest value |
+| 1 | bstr | plaintext content digest bytes |
+| 2 | bstr / null | secondary plaintext digest profile |
+| 3 | bstr / null | secondary plaintext digest bytes |
 
 When object encryption is disabled, `private-header` contains the deterministic CBOR private header body and `payload` contains the stored plaintext payload.
 
@@ -463,7 +458,7 @@ Snapshot body map:
 | 1 | bstr | snapshot ID |
 | 2 | uint | created time, Unix milliseconds |
 | 3 | array | snapshot roots |
-| 4 | bstr / null | parent snapshot object ID digest value |
+| 4 | bstr / null | parent snapshot object ID |
 | 5 | uint | metadata capture profile |
 
 Metadata capture profiles:
@@ -542,7 +537,7 @@ Tree reference map:
 
 | Key | Type | Field |
 |---:|---|---|
-| 1 | bstr | object ID digest value |
+| 1 | bstr | object ID |
 | 2 | uint | expected format |
 | 3 | uint | logical size |
 
@@ -588,9 +583,9 @@ Content reference map:
 | Key | Type | Field |
 |---:|---|---|
 | 1 | uint | content storage kind |
-| 2 | bstr | object ID digest value for single-object content |
+| 2 | bstr | object ID for single-object content |
 | 3 | uint | logical size |
-| 4 | bstr | file content digest value |
+| 4 | bstr | file content digest bytes |
 | 5 | array | chunk references |
 
 Content storage kinds:
@@ -604,7 +599,7 @@ Chunk reference map:
 
 | Key | Type | Field |
 |---:|---|---|
-| 1 | bstr | object ID digest value |
+| 1 | bstr | object ID |
 | 2 | uint | file offset |
 | 3 | uint | logical size |
 | 4 | uint | stored size |
@@ -655,7 +650,7 @@ pack-file :=
   pack-footer
 ```
 
-The pack ID is a digest value computed over `pack-header + object-record*`. The footer stores the digest bytes for that computed pack ID. The pack file name uses lowercase hexadecimal encoding of the complete pack ID digest value.
+The pack ID is digest bytes computed over `pack-header + object-record*` using the repository pack ID digest profile. The footer stores the computed pack ID bytes. The pack file name uses lowercase hexadecimal encoding of the pack ID bytes.
 
 Pack header:
 
@@ -670,7 +665,7 @@ Pack header:
 | 32 | 8 | pack ID digest profile |
 | 40 | 8 | reserved zero |
 
-The fixed pack header length is 48 bytes. The pack ID digest profile must have type `cryptographic-hash`.
+The fixed pack header length is 48 bytes. The pack ID digest profile must match the repository pack ID digest profile and must have type `cryptographic-hash`.
 
 Object record:
 
@@ -692,16 +687,15 @@ Record fixed fields:
 | 2 | object ID length |
 | 8 | envelope length |
 
-Version 1 uses a 16-byte record header. The `object-id` field stores the complete object ID digest value and must match the object ID embedded in the object envelope.
+Version 1 uses a 16-byte record header. The `object-id` field stores object ID bytes and must match the object ID embedded in the object envelope.
 
 Pack footer:
 
 | Size | Field |
 |---:|---|
-| 8 | pack ID digest profile |
 | n | pack ID digest bytes |
 
-The footer digest profile must match the pack header digest profile. The complete pack ID is `pack ID digest profile + pack ID digest bytes`.
+The pack ID digest byte length is determined by the repository pack ID digest profile.
 
 ## 7. Pack Index Files
 
@@ -727,7 +721,7 @@ Index header:
 | 32 | 8 | checksum digest profile |
 | 40 | 8 | reserved zero |
 
-The fixed index header length is 48 bytes. `header length` includes the fixed index header and the variable-length `pack-id` field. The `pack-id` field stores the complete pack ID digest value.
+The fixed index header length is 48 bytes. `header length` includes the fixed index header and the variable-length `pack-id` field. The `pack-id` field stores pack ID digest bytes whose length must match the repository pack ID digest profile.
 
 Index body map:
 
@@ -739,11 +733,11 @@ Index entry map:
 
 | Key | Type | Field |
 |---:|---|---|
-| 1 | bstr | object ID digest value |
+| 1 | bstr | object ID |
 | 2 | uint | record offset |
 | 3 | uint | envelope offset |
 | 4 | uint | envelope length |
 | 5 | uint | logical size |
-| 6 | bstr | physical checksum digest value |
+| 6 | bstr | physical checksum digest bytes |
 
-Index entries are sorted by object ID digest value byte order. The checksum is computed over `index-header + pack-id + deterministic-cbor-body`.
+Index entries are sorted by object ID byte order. The checksum is computed over `index-header + pack-id + deterministic-cbor-body`.
