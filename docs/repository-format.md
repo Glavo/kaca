@@ -23,6 +23,8 @@ Structured metadata bodies use deterministic CBOR with this profile:
 
 Object identity is computed from canonical logical bytes before compression, encryption, and envelope encoding.
 
+Magic values are eight-byte ASCII family identifiers. Format versions are stored in explicit version fields and are not encoded in magic values.
+
 ### 1.1 Identifiers and Paths
 
 Source IDs are canonical lowercase UUID text strings that match:
@@ -243,7 +245,7 @@ Fixed header:
 
 | Offset | Size | Field |
 |---:|---:|---|
-| 0 | 8 | magic: `KACAREP1` |
+| 0 | 8 | magic: `KACAREPO` |
 | 8 | 2 | repository file format version |
 | 10 | 2 | flags |
 | 12 | 4 | header length |
@@ -346,7 +348,7 @@ Fixed header:
 
 | Offset | Size | Field |
 |---:|---:|---|
-| 0 | 8 | magic: `KACAOBJ1` |
+| 0 | 8 | magic: `KACAENVP` |
 | 8 | 2 | object format version |
 | 10 | 2 | flags |
 | 12 | 4 | header length |
@@ -446,8 +448,8 @@ Payload magic values:
 
 | Magic | Format |
 |---|---|
-| `KACASNP1` | snapshot payload |
-| `KACATRE1` | tree payload |
+| `KACASNAP` | snapshot payload |
+| `KACATREE` | tree payload |
 
 ### 5.1 Snapshot Body
 
@@ -656,7 +658,7 @@ Pack header:
 
 | Offset | Size | Field |
 |---:|---:|---|
-| 0 | 8 | magic: `KACAPAK1` |
+| 0 | 8 | magic: `KACAPACK` |
 | 8 | 2 | pack format version |
 | 10 | 2 | flags |
 | 12 | 4 | header length |
@@ -711,7 +713,7 @@ Index header:
 
 | Offset | Size | Field |
 |---:|---:|---|
-| 0 | 8 | magic: `KACAIDX1` |
+| 0 | 8 | magic: `KACAINDX` |
 | 8 | 2 | index format version |
 | 10 | 2 | flags |
 | 12 | 4 | header length |
