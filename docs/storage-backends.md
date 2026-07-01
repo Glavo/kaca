@@ -93,13 +93,14 @@ A file-tree local repository is a workspace that contains the shared root plus c
     indexes/
   local/
     config.toml
+    sources/
     remotes/
     indexes/
     tmp/
     lock
 ```
 
-`<workspace>/share` is the RepositoryStore shared root. `<workspace>/local` is client-local workspace state and contains local configuration, caches, temporary files, and the local process lock.
+`<workspace>/share` is the RepositoryStore shared root. `<workspace>/local` is client-local workspace state and contains local configuration, local source path bindings, caches, temporary files, and the local process lock.
 
 Single-file repository modes store the shared repository root directly inside the archive or bundle. They do not store `share/` or `local/` entries inside the single-file container. Client-local state for a single-file repository is stored in a sidecar workspace:
 
@@ -107,6 +108,7 @@ Single-file repository modes store the shared repository root directly inside th
 world.kaca.zip
 world.kaca.local/
   config.toml
+  sources/
   remotes/
   indexes/
   tmp/

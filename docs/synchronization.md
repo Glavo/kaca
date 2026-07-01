@@ -4,7 +4,7 @@ This document defines remote repository synchronization rules.
 
 ## 1. Scope
 
-Synchronization transfers shared repository state between RepositoryStore endpoints. A file-tree local workspace exposes `share/` as the synchronized root. Archive and bundle repositories expose their internal root as the synchronized root.
+Synchronization transfers shared repository state between RepositoryStore endpoints. A file-tree local workspace exposes `share/` as the synchronized root. Archive and bundle repositories expose their internal root as the synchronized root. Workspace-local source overrides are client-local state and are not synchronized.
 
 Authoritative synchronized state includes:
 

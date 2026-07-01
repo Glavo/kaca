@@ -2,7 +2,7 @@
 
 This document defines the user-editable configuration files used by `kaca`.
 
-Repository identity, object identity, digest profiles, object layout, canonical compression profile, encryption mode, and repository format versions are stored in `repository`. Configuration files store policy, defaults, local client settings, remote definitions, local remote overrides, source definitions, and job definitions.
+Repository identity, object identity, digest profiles, object layout, canonical compression profile, encryption mode, and repository format versions are stored in `repository`. Configuration files store policy, defaults, local client settings, remote definitions, local remote overrides, source definitions, local source overrides, and job definitions.
 
 ## 1. Configuration Layers
 
@@ -12,6 +12,7 @@ Configuration is resolved from ordered layers:
 command invocation overrides
 job source reference configuration
 job configuration
+repository-local source override
 source configuration
 profile configuration
 repository-local client configuration
@@ -34,6 +35,7 @@ Configuration file locations:
 | Remote configuration | `<shared-repository>/remotes/<remote-name>.toml` |
 | Repository-local remote override | `<workspace>/local/remotes/<remote-name>.toml` |
 | Source configuration | `<shared-repository>/sources/<source-name>.toml` or user configuration source directory |
+| Repository-local source override | `<workspace>/local/sources/<source-name>.toml` |
 | Profile configuration | `<shared-repository>/profiles/<profile-name>.toml` or user configuration profile directory |
 | Job configuration | `<shared-repository>/jobs/<job-name>.toml` or user configuration job directory |
 
@@ -41,7 +43,7 @@ The parser accepts the keys defined for the file's layer. Extension data is stor
 
 `<shared-repository>` is the RepositoryStore logical root. In a file-tree local workspace it is `<workspace>/share`. In archive and bundle repositories it is the archive or bundle internal root.
 
-Repository synchronization includes repository configuration, remote configuration, and repository state from the shared repository root. Repository-local client configuration and local remote overrides are resolved by the local client that owns the workspace `local` directory.
+Repository synchronization includes repository configuration, remote configuration, and repository state from the shared repository root. Repository-local client configuration, local source overrides, and local remote overrides are resolved by the local client that owns the workspace `local` directory.
 
 Repository and source locations may be local paths or backend locators as defined in `docs/storage-backends.md`.
 
@@ -415,16 +417,20 @@ A local remote override selects the remote by `remote_id` when present and by `r
 
 ## 6. Source Configuration
 
-Source configuration files define stable tracked roots. Repository source configuration is stored as `<shared-repository>/sources/<source-name>.toml`. The file name and `name` field use the mutable source name. The immutable source identity is `source_id`.
+Source configuration files define stable tracked roots. Repository source configuration is stored as `<shared-repository>/sources/<source-name>.toml`. It is synchronized repository state. The file name and `name` field use the mutable source name. The immutable source identity is `source_id`.
+
+Repository-local source override files store client-local source access settings. They are stored as `<workspace>/local/sources/<source-name>.toml` and are not synchronized.
+
+Shared source configuration:
 
 ```toml
 source_version = 1
 source_id = "018f4c8b-2d4d-7a1c-9a4f-2f7d6d0e8a31"
 name = "world-a"
 kind = "directory"
-path = "D:/Minecraft/.minecraft/versions/1.21.1/saves/world-a"
 display_name = "World A"
 profiles = ["minecraft-world"]
+path = "versions/1.21.1/saves/world-a"
 
 [metadata]
 capture = "portable"
@@ -438,7 +444,16 @@ action = "exclude"
 pattern = "cache/**"
 ```
 
-### 6.1 Top-Level Keys
+Repository-local source override:
+
+```toml
+source = "world-a"
+source_id = "018f4c8b-2d4d-7a1c-9a4f-2f7d6d0e8a31"
+path = "D:/Minecraft/.minecraft/versions/1.21.1/saves/world-a"
+enabled = true
+```
+
+### 6.1 Shared Source Top-Level Keys
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -446,9 +461,9 @@ pattern = "cache/**"
 | `source_id` | UUID string | required | Immutable source identity. |
 | `name` | string | required | Mutable source name used by users, file names, CLI, and job references. |
 | `kind` | string | `"directory"` | Source root kind. |
-| `path` | locator | required | Source locator scanned for this root. |
 | `display_name` | string | `name` | User-facing source label. |
-| `profiles` | array of strings | absent | Profiles applied before source-local settings. |
+| `profiles` | array of strings | absent | Profiles applied before source settings. |
+| `path` | locator | absent | Portable source locator used when no repository-local source override supplies a path. |
 
 Source IDs are canonical lowercase UUID text:
 
@@ -462,7 +477,7 @@ Source names match:
 [a-z][a-z0-9._-]{0,63}
 ```
 
-Repository source file names match the source name: `sources/<source-name>.toml` relative to the shared repository root. Source names are unique after layer resolution. Source IDs are unique after layer resolution and remain unchanged when the source name or source path changes.
+Repository source file names match the source name: `sources/<source-name>.toml` relative to the shared repository root. Source names are unique after layer resolution. Source IDs are unique after layer resolution and remain unchanged when the source name or effective source path changes.
 
 Source `kind` values:
 
@@ -471,17 +486,34 @@ Source `kind` values:
 | `"directory"` | Scan a directory tree. |
 | `"file"` | Scan one regular file as a source root. |
 
-Snapshots use `source_id` as the logical identity of the tracked root. The `path` value is captured for display and audit metadata. The `name` and `display_name` values are resolved from current source configuration when displaying snapshots.
+Shared source configuration stores portable source identity and policy. Machine-local absolute source paths are stored in repository-local source overrides.
+
+Snapshot creation requires an effective source path from command invocation, repository-local source override, or shared source configuration. Listing, diff, verification, and restore operations may use source identity and display configuration without a local source path.
+
+Snapshots use `source_id` as the logical identity of the tracked root. The effective path used for snapshot creation is captured for display and audit metadata. The `name` and `display_name` values are resolved from current source configuration when displaying snapshots.
 
 Overlapping source paths are valid. Each source remains a separate logical root identified by its source ID.
 
-### 6.2 `[metadata]`
+### 6.2 Repository-Local Source Override Keys
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `source` | string | file name | Source name selected by the override. |
+| `source_id` | UUID string | absent | Immutable source identity used to validate the selected source. |
+| `path` | locator | absent | Client-local source locator scanned for this root. |
+| `enabled` | boolean | `true` | Allows this client to use the source for snapshot creation. |
+
+A repository-local source override selects the source by `source_id` when present and by `source` or file name otherwise. A `source_id` mismatch is invalid. Local source overrides may define machine-local source access fields and scanner hints. They do not change `source_id`, `name`, `kind`, `display_name`, profiles, filters, or metadata policy.
+
+If a job references a source whose effective local override has `enabled = false`, the job reports that source as unavailable on this client.
+
+### 6.3 `[metadata]`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `capture` | string | resolved | Filesystem metadata capture profile for snapshots of this source. |
 
-### 6.3 `[filters]`
+### 6.4 `[filters]`
 
 The `[filters]` table uses the shared filter schema defined in Section 8. Source filter rules are source defaults inherited by jobs that reference the source.
 
@@ -712,11 +744,12 @@ Source binding application order:
 1. Resolve profile `extends` recursively for every referenced profile.
 2. Apply source definition profiles in listed order.
 3. Apply source definition settings.
-4. Apply job profiles in listed order.
-5. Apply job settings.
-6. Apply source reference profiles in listed order.
-7. Apply source reference settings.
-8. Apply command invocation overrides.
+4. Apply repository-local source override fields.
+5. Apply job profiles in listed order.
+6. Apply job settings.
+7. Apply source reference profiles in listed order.
+8. Apply source reference settings.
+9. Apply command invocation overrides.
 
 Profile cycles are invalid. Duplicate profile names at the same layer are invalid.
 
@@ -747,10 +780,11 @@ Repository state protection by file class:
 | `profiles/*.toml` | yes | yes | Reusable policy bundles. |
 | `remotes/*.toml` | yes | yes | Portable remote definitions. |
 | `local/config.toml` | no | optional | Machine-local settings. |
+| `local/sources/*.toml` | no | optional | Machine-local source locators and scanner hints. |
 | `local/remotes/*.toml` | no | optional | Machine-local remote overrides and credential references. |
 | system/user config | no | no | Protected only when explicitly configured as a source. |
 
-Synchronization treats repository configuration, source configuration, job configuration, profile configuration, and remote configuration as repository state. Repository-local client configuration and local remote overrides are evaluated by the client that owns the `local` directory.
+Synchronization treats repository configuration, source configuration, job configuration, profile configuration, and remote configuration as repository state. Repository-local client configuration, local source overrides, and local remote overrides are evaluated by the client that owns the `local` directory.
 
 ## 14. Compatibility and Migration
 

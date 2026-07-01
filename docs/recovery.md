@@ -114,6 +114,7 @@ Default protected file kinds:
 | `profile-config` | yes |
 | `remote-config` | yes |
 | `local-config` | no |
+| `local-source-config` | no |
 | `local-remote-config` | no |
 | `snapshot-record` | yes |
 | `loose-object` | yes |

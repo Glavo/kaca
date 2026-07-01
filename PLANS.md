@@ -71,6 +71,7 @@ Configuration files use a layered model:
 command invocation overrides
 job source reference configuration
 job configuration
+repository-local source override
 source configuration
 profile configuration
 repository-local client configuration
@@ -87,7 +88,7 @@ Repository configuration is stored in `share/config.toml` for file-tree workspac
 - Filesystem metadata capture default.
 - Extension policy.
 
-Source configuration is stored in `share/sources/*.toml` for file-tree workspaces, `sources/*.toml` at the shared repository root for RepositoryStore backends, or a user-level source directory. It contains stable tracked root definitions such as immutable `source_id` UUID, mutable source name, source kind, current path, display name, default profiles, filters, and metadata policy.
+Source configuration is stored in `share/sources/*.toml` for file-tree workspaces, `sources/*.toml` at the shared repository root for RepositoryStore backends, or a user-level source directory. It contains stable tracked root definitions such as immutable `source_id` UUID, mutable source name, source kind, optional portable source locator, display name, default profiles, filters, and metadata policy.
 
 Profile configuration is stored in `share/profiles/*.toml` for file-tree workspaces, `profiles/*.toml` at the shared repository root for RepositoryStore backends, or a user-level profile directory. It contains reusable policy bundles such as metadata defaults, filters, and chunking rules.
 
@@ -99,6 +100,12 @@ Repository-local client configuration is stored in `local/config.toml` in a file
 - UI preferences.
 - Service settings.
 - Default remote selection.
+
+Repository-local source overrides are stored in `local/sources/*.toml` in a file-tree workspace or in the sidecar local workspace for a single-file repository. They contain machine-local source settings:
+
+- Source path bindings.
+- Local source availability.
+- Client-local scanner hints.
 
 Repository-local remote overrides are stored in `local/remotes/*.toml` in a file-tree workspace or in the sidecar local workspace for a single-file repository. They contain machine-local remote settings:
 
@@ -932,6 +939,8 @@ repository/
       sets/
   local/
     config.toml
+    sources/
+      <source-name>.toml
     remotes/
       <remote-name>.toml
     indexes/
@@ -949,6 +958,8 @@ A single-file repository stores only the shared repository layout inside the con
 world.kaca.zip
 world.kaca.local/
   config.toml
+  sources/
+    <source-name>.toml
   remotes/
     <remote-name>.toml
   indexes/
@@ -963,6 +974,7 @@ Notes:
 - `share/repository` stores binary internal metadata such as repository ID, repository format version, object format version, digest profiles, metadata encoding, canonical compression profile, object layout, encryption mode, key derivation public parameters, and creation time.
 - `share/config.toml` stores repository policy such as retention defaults, recovery record defaults, filesystem metadata capture defaults, and extension policy.
 - `share/sources` stores stable source definitions referenced by jobs.
+- `local/sources` stores client-local source path bindings, source availability, and scanner hints.
 - `share/profiles` stores reusable policy bundles applied by sources, jobs, and source references before local overrides.
 - `share/jobs` stores repeatable snapshot job definitions such as source references, schedules, ordered filter rules, and per-job capture overrides.
 - `share/remotes` stores portable remote definitions referenced by synchronization commands.
